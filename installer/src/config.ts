@@ -4,7 +4,6 @@ import {
   assignmentActionId,
   assignmentCameraId,
   cameraButtonActions,
-  logicalButtonId,
   type ConfiguratorState,
 } from './model';
 
@@ -30,7 +29,7 @@ export interface GeneratedMacroConfig {
       SlowModeDivisor: number;
     };
   };
-  controls: Record<string, string>;
+  controls: Record<number, string>;
   cameras: GeneratedCamera[];
 }
 
@@ -69,17 +68,17 @@ export function validateConfiguratorState(state: ConfiguratorState): string[] {
   const cameraBindingCounts = new Map<string, number>();
   for (const button of PHYSICAL_BUTTONS) {
     const assignment = state.assignments[button.number];
-    if (!assignment) {
-      errors.push(`Button ${button.number} must be listed, even when it is Unassigned.`);
+    if (assignment === undefined) {
+      errors.push(`Button ${button.number} must be listed, even when it has no action.`);
       continue;
     }
     const actionId = assignmentActionId(assignment);
     const cameraId = assignmentCameraId(assignment);
-    if (actionId && !actionIds.has(actionId)) {
+    if (actionId !== undefined && !actionIds.has(actionId)) {
       errors.push(`Button ${button.number} references unknown action ${actionId}.`);
     } else if (cameraId && !cameraIds.has(cameraId)) {
       errors.push(`Button ${button.number} references a camera that no longer exists.`);
-    } else if (!actionId && !cameraId) {
+    } else if (actionId === undefined && !cameraId) {
       errors.push(`Button ${button.number} has an invalid assignment.`);
     }
     if (cameraId) cameraBindingCounts.set(cameraId, (cameraBindingCounts.get(cameraId) ?? 0) + 1);
@@ -98,15 +97,15 @@ export function buildMacroConfig(state: ConfiguratorState): GeneratedMacroConfig
   if (errors.length) throw new Error(errors.join(' '));
 
   const cameraActions = cameraButtonActions(state.cameras);
-  const controls: Record<string, string> = {};
+  const controls: Record<number, string> = {};
 
   for (const button of PHYSICAL_BUTTONS) {
     const assignment = state.assignments[button.number];
     const actionId = assignmentActionId(assignment);
     const cameraId = assignmentCameraId(assignment);
     const buttonAction = actionId ?? (cameraId ? cameraActions.get(cameraId) : undefined);
-    if (!buttonAction) throw new Error(`Unable to resolve ButtonAction for button ${button.number}.`);
-    controls[logicalButtonId(button, state.handedness)] = buttonAction;
+    if (buttonAction === undefined) throw new Error(`Unable to resolve ButtonAction for button ${button.number}.`);
+    controls[button.number] = buttonAction;
   }
 
   const defaultCameraAction = cameraActions.get(state.defaultCameraId);
@@ -136,7 +135,7 @@ export function buildMacroConfig(state: ConfiguratorState): GeneratedMacroConfig
 
 function javascriptObject(value: unknown): string {
   return JSON.stringify(value, null, 2).replace(
-    /^(\s*)"([A-Za-z_$][A-Za-z0-9_$]*)":/gm,
+    /^(\s*)"([A-Za-z_$][A-Za-z0-9_$]*|\d+)":/gm,
     '$1$2:',
   );
 }

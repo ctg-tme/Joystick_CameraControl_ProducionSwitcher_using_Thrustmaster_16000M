@@ -32,14 +32,14 @@ _Avoid_: Map ID, mapped ID
 A generated, readable action such as `SelectQuadCamera` that connects one camera definition to exactly one button without coupling the camera to a fixed physical position.
 _Avoid_: Camera map ID, camera index, camera button ID
 
-**Unassigned**:
-The explicit no-op Button Action used when a listed button should perform no function.
-_Avoid_: Missing, blank
+**No Action**:
+An intentionally blank control value (`''`, `null`, or `undefined`) for a listed physical button. The browser configurator generates `''`.
+_Avoid_: Unassigned action
 
 **Guide Button**:
 The stable physical button number printed on the operator guide.
 _Avoid_: Logical button ID
 
 **Logical Button ID**:
-The Thrustmaster class identifier used as a key in `config.controls`. Base-button identifiers depend on the physical handedness switch.
-_Avoid_: Guide button
+The handedness-dependent Thrustmaster class identifier resolved internally from a Guide Button. It is not part of the public `config.controls` interface.
+_Avoid_: Configuration button number

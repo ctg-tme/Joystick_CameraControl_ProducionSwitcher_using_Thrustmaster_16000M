@@ -25,7 +25,7 @@ import {
 } from './model';
 import { loadDependencySource, loadInstallerSources, type InstallerSources } from './source';
 
-const UNUSED_ASSIGNMENT = builtInAssignment('Unassigned');
+const UNUSED_ASSIGNMENT = builtInAssignment('');
 
 function escapeHtml(value: unknown): string {
   return String(value)
@@ -83,14 +83,14 @@ export class ConfiguratorApp {
 
   private assignmentInfo(assignment: string): AssignmentInfo {
     const actionId = assignmentActionId(assignment);
-    if (actionId) {
+    if (actionId !== undefined) {
       const action = BUILT_IN_ACTIONS.find((candidate) => candidate.id === actionId);
       if (action) {
         return {
           label: action.label,
           description: action.description,
           category: action.category,
-          code: action.id,
+          code: action.id || "''",
         };
       }
     }
@@ -246,7 +246,7 @@ export class ConfiguratorApp {
                 ['camera', 'Camera'],
                 ['motion', 'Motion / swap'],
                 ['selfview', 'Selfview'],
-                ['unused', 'Unassigned'],
+                ['unused', 'No action'],
               ].map(([category, label]) => `<span><i class="${category}"></i>${label}</span>`).join('')}
             </div>
           </div>
@@ -278,7 +278,7 @@ export class ConfiguratorApp {
           ${BUILT_IN_ACTIONS.map((action) => `
             <article class="manifest-item">
               <span class="manifest-mark ${action.category}"></span>
-              <div><code>${escapeHtml(action.id)}</code><strong>${escapeHtml(action.label)}</strong><p>${escapeHtml(action.description)}</p></div>
+              <div><code>${escapeHtml(action.id || "'' (blank)")}</code><strong>${escapeHtml(action.label)}</strong><p>${escapeHtml(action.description)}</p></div>
             </article>`).join('')}
         </div>
       </section>`;

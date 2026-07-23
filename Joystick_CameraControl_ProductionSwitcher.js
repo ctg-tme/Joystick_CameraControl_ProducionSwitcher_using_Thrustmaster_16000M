@@ -19,7 +19,7 @@ or implied.
  *
  * Date Created:            July 22, 2026
  * Revised:                 July 23, 2026
- * Version:                 1.4.0
+ * Version:                 1.5.0
  *
  * Description:             Standalone Thrustmaster T.16000M camera controller
  *                          and Main/Preview production switcher for RoomOS.
@@ -53,26 +53,27 @@ const config = {
       SlowModeDivisor: 2
     }
   },
-  // Map every logical button ID to either a built-in action or a camera
-  // ButtonAction. Keep unused buttons explicit with Unassigned.
-  // Multiple buttons may invoke the same built-in action.
+  // Physical buttons are listed in printed button-number order. Assign a
+  // built-in action or camera ButtonAction, or leave the value blank for no
+  // action. null and undefined are also accepted for intentionally unused
+  // buttons. Multiple buttons may invoke the same built-in action.
   controls: {
-    STICK_TRIGGER: 'PrecisionMode',
-    STICK_SOUTH: 'Unassigned',
-    STICK_EAST: 'SwapMainPreview',
-    STICK_WEST: 'SwapMainPreview',
-    BASE_LEFT_1: 'ControlMain',
-    BASE_LEFT_2: 'SelfviewWindowed',
-    BASE_LEFT_3: 'SelfviewFullscreen',
-    BASE_LEFT_6: 'Unassigned',
-    BASE_LEFT_5: 'SelfviewOff',
-    BASE_LEFT_4: 'ControlPreview',
-    BASE_RIGHT_3: 'SelectRvptzLeft',
-    BASE_RIGHT_2: 'SelectQuadCamera',
-    BASE_RIGHT_1: 'Unassigned',
-    BASE_RIGHT_4: 'Unassigned',
-    BASE_RIGHT_5: 'SelectRvptzRight',
-    BASE_RIGHT_6: 'SelectUsbCamera'
+    1: 'PrecisionMode',
+    2: '',
+    3: 'SwapMainPreview',
+    4: 'SwapMainPreview',
+    5: 'ControlMain',
+    6: 'SelfviewWindowed',
+    7: 'SelfviewFullscreen',
+    8: '',
+    9: 'SelfviewOff',
+    10: 'ControlPreview',
+    11: 'SelectRvptzLeft',
+    12: 'SelectQuadCamera',
+    13: '',
+    14: '',
+    15: 'SelectRvptzRight',
+    16: 'SelectUsbCamera'
   },
   // Configure one to four cameras. Each ButtonAction must appear exactly once in
   // controls so every camera has one button binding.
@@ -143,6 +144,30 @@ const joystickDemoPanelXml = `<Extensions>
 </Extensions>
 `;
 
+/**
+ * Physical guide-button order and its handedness-dependent class identifiers.
+ * The public configuration uses only Number; class IDs remain an implementation
+ * detail resolved from StartingHand.
+ */
+const joystickDemoPhysicalButtonManifest = [
+  { Number: 1, RightButtonId: 'STICK_TRIGGER', LeftButtonId: 'STICK_TRIGGER' },
+  { Number: 2, RightButtonId: 'STICK_SOUTH', LeftButtonId: 'STICK_SOUTH' },
+  { Number: 3, RightButtonId: 'STICK_EAST', LeftButtonId: 'STICK_EAST' },
+  { Number: 4, RightButtonId: 'STICK_WEST', LeftButtonId: 'STICK_WEST' },
+  { Number: 5, RightButtonId: 'BASE_LEFT_1', LeftButtonId: 'BASE_RIGHT_3' },
+  { Number: 6, RightButtonId: 'BASE_LEFT_2', LeftButtonId: 'BASE_RIGHT_2' },
+  { Number: 7, RightButtonId: 'BASE_LEFT_3', LeftButtonId: 'BASE_RIGHT_1' },
+  { Number: 8, RightButtonId: 'BASE_LEFT_6', LeftButtonId: 'BASE_RIGHT_4' },
+  { Number: 9, RightButtonId: 'BASE_LEFT_5', LeftButtonId: 'BASE_RIGHT_5' },
+  { Number: 10, RightButtonId: 'BASE_LEFT_4', LeftButtonId: 'BASE_RIGHT_6' },
+  { Number: 11, RightButtonId: 'BASE_RIGHT_3', LeftButtonId: 'BASE_LEFT_1' },
+  { Number: 12, RightButtonId: 'BASE_RIGHT_2', LeftButtonId: 'BASE_LEFT_2' },
+  { Number: 13, RightButtonId: 'BASE_RIGHT_1', LeftButtonId: 'BASE_LEFT_3' },
+  { Number: 14, RightButtonId: 'BASE_RIGHT_4', LeftButtonId: 'BASE_LEFT_6' },
+  { Number: 15, RightButtonId: 'BASE_RIGHT_5', LeftButtonId: 'BASE_LEFT_5' },
+  { Number: 16, RightButtonId: 'BASE_RIGHT_6', LeftButtonId: 'BASE_LEFT_4' }
+];
+
 /********************************************
 
               Joystick Logic
@@ -186,6 +211,27 @@ function joystickDemoLog(...args) {
  */
 function joystickDemoError(...args) {
   console.error('[Joystick_Demo]:', ...args);
+}
+
+/**
+ * Resolves a physical button number to the class ID for the configured hand.
+ * @param {{ RightButtonId: string, LeftButtonId: string }} button
+ * @returns {string}
+ */
+function joystickDemoResolveButtonId(button) {
+  return config.joystick.StartingHand === 'left'
+    ? button.LeftButtonId
+    : button.RightButtonId;
+}
+
+/**
+ * Empty, null, and undefined control values intentionally perform no action.
+ * @param {*} buttonAction
+ * @returns {boolean}
+ */
+function joystickDemoHasNoButtonAction(buttonAction) {
+  return buttonAction == null ||
+    (typeof buttonAction === 'string' && buttonAction.trim() === '');
 }
 
 /**
@@ -248,29 +294,38 @@ function joystickDemoValidateControlConfig() {
   const controls = config.controls;
 
   if (!controls || typeof controls !== 'object' || Array.isArray(controls)) {
-    throw new Error('config.controls must be an object keyed by joystick button ID');
+    throw new Error('config.controls must be an object keyed by physical button number');
   }
 
   const buttonActions = Object.values(controls);
+  const expectedButtonNumbers = joystickDemoPhysicalButtonManifest.map(button => String(button.Number));
 
-  for (const buttonId of joystickDemoController.buttons) {
-    if (!Object.prototype.hasOwnProperty.call(controls, buttonId)) {
-      throw new Error(`config.controls must explicitly include ButtonId "${buttonId}"`);
+  for (const button of joystickDemoPhysicalButtonManifest) {
+    if (!Object.prototype.hasOwnProperty.call(controls, button.Number)) {
+      throw new Error(`config.controls must explicitly include physical button ${button.Number}`);
+    }
+
+    const buttonId = joystickDemoResolveButtonId(button);
+    if (!joystickDemoController.buttons.includes(buttonId)) {
+      throw new Error(`Physical button ${button.Number} resolves to unsupported ButtonId "${buttonId}"`);
     }
   }
 
-  for (const [buttonId, buttonAction] of Object.entries(controls)) {
-    if (!joystickDemoController.buttons.includes(buttonId)) {
-      throw new Error(`Unknown control ButtonId "${buttonId}"`);
+  for (const [buttonNumber, buttonAction] of Object.entries(controls)) {
+    if (!expectedButtonNumbers.includes(buttonNumber)) {
+      throw new Error(`Unknown physical button number "${buttonNumber}" in config.controls`);
     }
-    if (typeof buttonAction !== 'string' || buttonAction.trim() === '') {
-      throw new Error(`ButtonId "${buttonId}" requires a non-empty ButtonAction`);
+    if (joystickDemoHasNoButtonAction(buttonAction)) {
+      continue;
+    }
+    if (typeof buttonAction !== 'string') {
+      throw new Error(`Physical button ${buttonNumber} must use a ButtonAction string, blank, null, or undefined`);
     }
 
     const isControlAction = Object.prototype.hasOwnProperty.call(joystickDemoControlManifest, buttonAction);
     const isCamera = Object.prototype.hasOwnProperty.call(joystickDemoCamerasByButtonAction, buttonAction);
     if (!isControlAction && !isCamera) {
-      throw new Error(`Unknown ButtonAction "${buttonAction}" assigned to ButtonId "${buttonId}"`);
+      throw new Error(`Unknown ButtonAction "${buttonAction}" assigned to physical button ${buttonNumber}`);
     }
   }
 
@@ -286,17 +341,18 @@ function joystickDemoValidateControlConfig() {
  * Registers every configured button as either a built-in action or a camera selector.
  */
 function joystickDemoRegisterButtons() {
-  for (const [buttonId, buttonAction] of Object.entries(config.controls)) {
-    const controlDefinition = Object.prototype.hasOwnProperty.call(joystickDemoControlManifest, buttonAction)
+  for (const button of joystickDemoPhysicalButtonManifest) {
+    const buttonId = joystickDemoResolveButtonId(button);
+    const buttonAction = config.controls[button.Number];
+    const noAction = joystickDemoHasNoButtonAction(buttonAction);
+    const controlDefinition = !noAction && Object.prototype.hasOwnProperty.call(joystickDemoControlManifest, buttonAction)
       ? joystickDemoControlManifest[buttonAction]
       : null;
 
     joystickDemoController.button.on(buttonId, state => {
       if (controlDefinition?.Handler) {
         controlDefinition.Handler(state, buttonId);
-      } else if (controlDefinition) {
-        // Unassigned buttons are intentionally registered as no-ops.
-      } else if (state === 'Released') {
+      } else if (!noAction && state === 'Released') {
         joystickDemoSelectSource(buttonAction, buttonId);
       }
     });
@@ -566,10 +622,6 @@ function joystickDemoHandleSwapMainPreview(state, buttonId) {
 }
 
 const joystickDemoControlManifest = {
-  Unassigned: {
-    Description: 'No action is assigned to this button.',
-    Handler: null
-  },
   PrecisionMode: {
     Description: 'Reduces camera movement speed while the button is held.',
     Handler: joystickDemoHandlePrecisionMode

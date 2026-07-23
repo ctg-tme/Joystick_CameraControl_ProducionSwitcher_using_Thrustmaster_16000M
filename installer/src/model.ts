@@ -37,9 +37,9 @@ export interface ConfiguratorState {
 
 export const BUILT_IN_ACTIONS: BuiltInAction[] = [
   {
-    id: 'Unassigned',
-    label: 'Unassigned',
-    description: 'No operator action is assigned to this button.',
+    id: '',
+    label: 'No action',
+    description: 'Leaves this button blank so it performs no operator action.',
     category: 'unused',
   },
   {
@@ -164,19 +164,19 @@ export function createDefaultState(): ConfiguratorState {
     defaultCameraId: 'camera-1',
     assignments: {
       1: builtInAssignment('PrecisionMode'),
-      2: builtInAssignment('Unassigned'),
+      2: builtInAssignment(''),
       3: builtInAssignment('SwapMainPreview'),
       4: builtInAssignment('SwapMainPreview'),
       5: builtInAssignment('ControlMain'),
       6: builtInAssignment('SelfviewWindowed'),
       7: builtInAssignment('SelfviewFullscreen'),
-      8: builtInAssignment('Unassigned'),
+      8: builtInAssignment(''),
       9: builtInAssignment('SelfviewOff'),
       10: builtInAssignment('ControlPreview'),
       11: cameraAssignment('camera-2'),
       12: cameraAssignment('camera-1'),
-      13: builtInAssignment('Unassigned'),
-      14: builtInAssignment('Unassigned'),
+      13: builtInAssignment(''),
+      14: builtInAssignment(''),
       15: cameraAssignment('camera-3'),
       16: cameraAssignment('camera-4'),
     },

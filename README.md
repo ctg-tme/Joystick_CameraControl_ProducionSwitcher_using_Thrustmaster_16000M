@@ -16,7 +16,7 @@ The macro is extracted from the InfoComm 2026 demo without the demo's unrelated 
 The browser configurator is the recommended path:
 
 1. Add one to four cameras. A readable camera `ButtonAction`, such as `SelectQuadCamera`, is generated from each name.
-2. Assign every physical button with a dropdown. Use `Unassigned` for buttons that intentionally do nothing.
+2. Assign every physical button with a dropdown. Choose **No action** to generate a blank value.
 3. Review or download the generated macro.
 4. Enter the exact RoomOS device address, administrator credentials, and expected serial number.
 5. Connect and verify the device, acknowledge the macro runtime restart, then install.
@@ -66,38 +66,37 @@ The editable `config` block is near the top of the macro and is bounded by `JOYS
 
 - a built-in action from the manifest below;
 - a generated camera-selection action from `config.cameras`;
-- `Unassigned`, the explicit no-op.
 
-All 16 logical button IDs must appear in `config.controls`, including unused buttons:
+`config.controls` is keyed by the physical guide button number, so its public interface stays ordered from `1` through `16`. All 16 buttons must appear, including unused buttons:
 
 ```js
 controls: {
-  STICK_TRIGGER: 'PrecisionMode',
-  STICK_SOUTH: 'Unassigned',
-  STICK_EAST: 'SwapMainPreview',
-  STICK_WEST: 'SwapMainPreview',
-  BASE_LEFT_1: 'ControlMain',
-  BASE_LEFT_2: 'SelfviewWindowed',
-  BASE_LEFT_3: 'SelfviewFullscreen',
-  BASE_LEFT_6: 'Unassigned',
-  BASE_LEFT_5: 'SelfviewOff',
-  BASE_LEFT_4: 'ControlPreview',
-  BASE_RIGHT_3: 'SelectRvptzLeft',
-  BASE_RIGHT_2: 'SelectQuadCamera',
-  BASE_RIGHT_1: 'Unassigned',
-  BASE_RIGHT_4: 'Unassigned',
-  BASE_RIGHT_5: 'SelectRvptzRight',
-  BASE_RIGHT_6: 'SelectUsbCamera'
+  1: 'PrecisionMode',
+  2: '',
+  3: 'SwapMainPreview',
+  4: 'SwapMainPreview',
+  5: 'ControlMain',
+  6: 'SelfviewWindowed',
+  7: 'SelfviewFullscreen',
+  8: '',
+  9: 'SelfviewOff',
+  10: 'ControlPreview',
+  11: 'SelectRvptzLeft',
+  12: 'SelectQuadCamera',
+  13: '',
+  14: '',
+  15: 'SelectRvptzRight',
+  16: 'SelectUsbCamera'
 }
 ```
 
-Built-in actions may be unused or assigned to multiple buttons. Each configured camera action must be assigned to exactly one button.
+Use `''`, `null`, or `undefined` when a listed button should perform no action. The configurator consistently generates `''`. Built-in actions may be unused or assigned to multiple buttons. Each configured camera action must be assigned to exactly one button.
 
 ### Control manifest
 
 | `ButtonAction` | What it does |
 |---|---|
-| `Unassigned` | Explicitly leaves the button without an operator action |
+| `''`, `null`, or `undefined` | Leaves the listed button without an operator action |
 | `PrecisionMode` | Reduces camera movement speed while the assigned button is held |
 | `SwapMainPreview` | Swaps the Main and Preview camera sources |
 | `ControlMain` | Assigns joystick movement to the camera currently on Main |
@@ -141,26 +140,26 @@ The browser page generates these identifiers from camera names and keeps camera 
 
 ### Default physical button map
 
-The guide button number is stable. The logical class ID changes for the base buttons when the physical handedness switch changes; the browser configurator resolves that mapping automatically.
+The guide button number is the configuration key and remains stable. The macro resolves the Thrustmaster class ID internally from `StartingHand`.
 
-| Guide button | Physical control | Right-handed logical ID | Default `ButtonAction` |
-|---:|---|---|---|
-| 1 | Trigger | `STICK_TRIGGER` | `PrecisionMode` |
-| 2 | Lower center stick button | `STICK_SOUTH` | `Unassigned` |
-| 3 | Left stick-side button | `STICK_EAST` | `SwapMainPreview` |
-| 4 | Right stick-side button | `STICK_WEST` | `SwapMainPreview` |
-| 5 | Left base top button | `BASE_LEFT_1` | `ControlMain` |
-| 6 | Left base upper middle button | `BASE_LEFT_2` | `SelfviewWindowed` |
-| 7 | Left base middle button | `BASE_LEFT_3` | `SelfviewFullscreen` |
-| 8 | Left base lower button | `BASE_LEFT_6` | `Unassigned` |
-| 9 | Left base lower middle button | `BASE_LEFT_5` | `SelfviewOff` |
-| 10 | Left base inner button | `BASE_LEFT_4` | `ControlPreview` |
-| 11 | Right base top button | `BASE_RIGHT_3` | `SelectRvptzLeft` |
-| 12 | Right base upper middle button | `BASE_RIGHT_2` | `SelectQuadCamera` |
-| 13 | Right base inner top button | `BASE_RIGHT_1` | `Unassigned` |
-| 14 | Right base inner lower button | `BASE_RIGHT_4` | `Unassigned` |
-| 15 | Right base lower middle button | `BASE_RIGHT_5` | `SelectRvptzRight` |
-| 16 | Right base lower button | `BASE_RIGHT_6` | `SelectUsbCamera` |
+| Button | Physical control | Default `ButtonAction` |
+|---:|---|---|
+| 1 | Trigger | `PrecisionMode` |
+| 2 | Lower center stick button | `''` |
+| 3 | Left stick-side button | `SwapMainPreview` |
+| 4 | Right stick-side button | `SwapMainPreview` |
+| 5 | Left base top button | `ControlMain` |
+| 6 | Left base upper middle button | `SelfviewWindowed` |
+| 7 | Left base middle button | `SelfviewFullscreen` |
+| 8 | Left base lower button | `''` |
+| 9 | Left base lower middle button | `SelfviewOff` |
+| 10 | Left base inner button | `ControlPreview` |
+| 11 | Right base top button | `SelectRvptzLeft` |
+| 12 | Right base upper middle button | `SelectQuadCamera` |
+| 13 | Right base inner top button | `''` |
+| 14 | Right base inner lower button | `''` |
+| 15 | Right base lower middle button | `SelectRvptzRight` |
+| 16 | Right base lower button | `SelectUsbCamera` |
 
 The three analog axes are intentionally fixed and are not button actions:
 

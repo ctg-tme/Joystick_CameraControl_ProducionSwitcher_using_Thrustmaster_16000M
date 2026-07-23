@@ -13,27 +13,28 @@ describe('joystick configuration generation', () => {
     const config = buildMacroConfig(state);
 
     expect(Object.keys(config.controls)).toHaveLength(PHYSICAL_BUTTONS.length);
-    expect(config.controls.STICK_SOUTH).toBe('Unassigned');
-    expect(config.controls.BASE_LEFT_6).toBe('Unassigned');
-    expect(config.controls.BASE_RIGHT_1).toBe('Unassigned');
-    expect(config.controls.BASE_RIGHT_4).toBe('Unassigned');
-    expect(config.controls.BASE_RIGHT_2).toBe('SelectQuadCamera');
+    expect(Object.keys(config.controls)).toEqual(PHYSICAL_BUTTONS.map((button) => String(button.number)));
+    expect(config.controls[2]).toBe('');
+    expect(config.controls[8]).toBe('');
+    expect(config.controls[13]).toBe('');
+    expect(config.controls[14]).toBe('');
+    expect(config.controls[12]).toBe('SelectQuadCamera');
     expect(config.cameras[0].ButtonAction).toBe('SelectQuadCamera');
     expect(config.joystick.DefaultCameraAction).toBe('SelectQuadCamera');
   });
 
-  it('keeps physical assignments in place when handedness changes', () => {
+  it('keeps numbered physical assignments unchanged when handedness changes', () => {
     const state = createDefaultState();
     state.handedness = 'left';
     const config = buildMacroConfig(state);
 
-    expect(config.controls.BASE_RIGHT_3).toBe('ControlMain');
-    expect(config.controls.BASE_LEFT_1).toBe('SelectRvptzLeft');
+    expect(config.controls[5]).toBe('ControlMain');
+    expect(config.controls[11]).toBe('SelectRvptzLeft');
   });
 
   it('allows built-in actions to be unused while cameras remain exactly once', () => {
     const state = createDefaultState();
-    state.assignments[9] = builtInAssignment('Unassigned');
+    state.assignments[9] = builtInAssignment('');
 
     expect(validateConfiguratorState(state)).toEqual([]);
   });
