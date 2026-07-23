@@ -46,3 +46,17 @@ _Avoid_: Logical button ID
 **Logical Button ID**:
 The handedness-dependent Thrustmaster class identifier resolved internally from a Guide Button. It is not part of the public `config.controls` interface.
 _Avoid_: Configuration button number
+
+## Development and deployment
+
+**RoomOS validation target**: `parent-2-prog2`
+
+Use the exact `parent-2-prog2` alias through the shared RoomOS Socket Workbench
+for this project's device validation and deployment. Do not create a parallel
+device connection or substitute another target.
+
+The repository owner has authorized completed, locally validated work to be
+committed and pushed before installing it on `parent-2-prog2`. Preview every
+device-side macro change before applying it. Installing or deploying the macro
+requires a RoomOS macro runtime restart, which restarts every active macro on
+that device.
