@@ -19,7 +19,7 @@ or implied.
  *
  * Date Created:            July 22, 2026
  * Revised:                 July 23, 2026
- * Version:                 1.6.0
+ * Version:                 1.8.0
  *
  * Description:             Standalone Thrustmaster T.16000M camera controller
  *                          and Main/Preview production switcher for RoomOS.
@@ -46,8 +46,9 @@ const config = {
     ProjectName: 'Joystick Camera Control',
     RoomName: 'Room 1'
   },
-  displays: {
-    right: 2
+  previewDisplay: {
+    mode: 'On',
+    output: 2
   },
   joystick: {
     StartingHand: 'right',
@@ -111,34 +112,72 @@ const config = {
 /* JOYSTICK_CONFIG_END */
 
 const joystickDemoPanelId = 'ic26_avDemo~joy';
+const joystickDemoEnabledWidgetId = `${joystickDemoPanelId}~enabled`;
+const joystickDemoHandednessWidgetId = `${joystickDemoPanelId}~handedness`;
 
 const joystickDemoPanelXml = `<Extensions>
   <Version>1.11</Version>
   <Panel>
     <Order>2</Order>
     <Location>HomeScreen</Location>
-    <Icon>Hvac</Icon>
+    <Icon>Sliders</Icon>
     <Color>#262626</Color>
-    <Name>Joystick Demo</Name>
+    <Name>Joystick Controls</Name>
     <ActivityType>Custom</ActivityType>
     <Page>
-      <Name>Joystick Demo</Name>
+      <Name>Joystick Controls</Name>
       <Row>
-        <Name>Row</Name>
+        <Name>Joystick controls</Name>
         <Widget>
-          <WidgetId>widget_1</WidgetId>
-          <Name>While this page is open, interact with the USB joystick</Name>
+          <WidgetId>${joystickDemoPanelId}~enabledHelp</WidgetId>
+          <Name>Enable joystick camera and switching controls. Closing this panel does not change the selection.</Name>
           <Type>Text</Type>
-          <Options>size=4;fontSize=normal;align=center</Options>
+          <Options>size=4;fontSize=small;align=left</Options>
         </Widget>
       </Row>
       <Row>
-        <Name>Row</Name>
+        <Name>Joystick controls</Name>
         <Widget>
-          <WidgetId>widget_2</WidgetId>
-          <Name>The Joystick will cease to operate when this page closes</Name>
+          <WidgetId>${joystickDemoEnabledWidgetId}</WidgetId>
+          <Type>GroupButton</Type>
+          <Options>size=4;columns=2</Options>
+          <ValueSpace>
+            <Value>
+              <Key>disabled</Key>
+              <Name>Disabled</Name>
+            </Value>
+            <Value>
+              <Key>enabled</Key>
+              <Name>Enabled</Name>
+            </Value>
+          </ValueSpace>
+        </Widget>
+      </Row>
+      <Row>
+        <Name>Handedness</Name>
+        <Widget>
+          <WidgetId>${joystickDemoPanelId}~handednessHelp</WidgetId>
+          <Name>Match this selection to the physical LEFT or RIGHT switch on the bottom of the joystick.</Name>
           <Type>Text</Type>
-          <Options>size=4;fontSize=normal;align=center</Options>
+          <Options>size=4;fontSize=small;align=left</Options>
+        </Widget>
+      </Row>
+      <Row>
+        <Name>Handedness</Name>
+        <Widget>
+          <WidgetId>${joystickDemoHandednessWidgetId}</WidgetId>
+          <Type>GroupButton</Type>
+          <Options>size=4;columns=2</Options>
+          <ValueSpace>
+            <Value>
+              <Key>left</Key>
+              <Name>Left-handed</Name>
+            </Value>
+            <Value>
+              <Key>right</Key>
+              <Name>Right-handed</Name>
+            </Value>
+          </ValueSpace>
         </Widget>
       </Row>
       <PageId>${joystickDemoPanelId}</PageId>
@@ -191,15 +230,17 @@ let joystickDemoCurrentPreviewControl;
 let joystickDemoControlling = 'main';
 let joystickDemoTriggerState = false;
 let joystickDemoAxisState = { Y: 0, RZ: 0, HAT0Y: 0 };
+let joystickDemoHandedness = config.joystick.StartingHand;
 
 // Master switch to enable/disable all joystick features
 let joystickDemoEnabled = false;
+let joystickDemoControlPanelAction = Promise.resolve();
 
 // Trackers to prevent command spamming
 let joystickDemoLastPanTiltSent = { Tilt: 'Stop', Pan: 'Stop', Speed: 0 };
 let joystickDemoLastZoomSent = { Zoom: 'Stop', Speed: 0 };
 
-const joystickDemoController = new ThrustMaster16000M_JoyStick({ handednessHardwareToggle: config.joystick.StartingHand });
+const joystickDemoController = new ThrustMaster16000M_JoyStick({ handednessHardwareToggle: joystickDemoHandedness });
 
 /**
  * Logs a message to the console, prefixed for the Joystick Demo for clarity in device logs.
@@ -223,7 +264,7 @@ function joystickDemoError(...args) {
  * @returns {string}
  */
 function joystickDemoResolveButtonId(button) {
-  return config.joystick.StartingHand === 'left'
+  return joystickDemoHandedness === 'left'
     ? button.LeftButtonId
     : button.RightButtonId;
 }
@@ -236,6 +277,27 @@ function joystickDemoResolveButtonId(button) {
 function joystickDemoHasNoButtonAction(buttonAction) {
   return buttonAction == null ||
     (typeof buttonAction === 'string' && buttonAction.trim() === '');
+}
+
+function joystickDemoPreviewIsEnabled() {
+  return config.previewDisplay.mode === 'On';
+}
+
+/**
+ * Validates the local Preview display capability and its target matrix output.
+ */
+function joystickDemoValidatePreviewDisplayConfig() {
+  const previewDisplay = config.previewDisplay;
+
+  if (!previewDisplay || typeof previewDisplay !== 'object' || Array.isArray(previewDisplay)) {
+    throw new Error('config.previewDisplay must be an object');
+  }
+  if (!['On', 'Off'].includes(previewDisplay.mode)) {
+    throw new Error('config.previewDisplay.mode must be "On" or "Off"');
+  }
+  if (!Number.isInteger(previewDisplay.output) || previewDisplay.output < 1) {
+    throw new Error('config.previewDisplay.output must be a positive whole number');
+  }
 }
 
 /**
@@ -297,6 +359,9 @@ function joystickDemoValidateCameraConfig() {
 function joystickDemoValidateControlConfig() {
   const controls = config.controls;
 
+  if (!['left', 'right'].includes(config.joystick.StartingHand)) {
+    throw new Error('config.joystick.StartingHand must be "left" or "right"');
+  }
   if (!controls || typeof controls !== 'object' || Array.isArray(controls)) {
     throw new Error('config.controls must be an object keyed by physical button number');
   }
@@ -375,6 +440,14 @@ function joystickDemoResetTrackingState() {
   joystickDemoCurrentPreviewControl = joystickDemoDefaultCamera.ControlId;
 
   joystickDemoControlling = 'main';
+  joystickDemoResetInputState();
+}
+
+/**
+ * Clears transient input and command-deduplication state without changing the
+ * tracked Main, Preview, or controlled camera assignments.
+ */
+function joystickDemoResetInputState() {
   joystickDemoTriggerState = false;
   joystickDemoAxisState = { Y: 0, RZ: 0, HAT0Y: 0 };
   joystickDemoLastPanTiltSent = { Tilt: 'Stop', Pan: 'Stop', Speed: 0 };
@@ -522,20 +595,36 @@ async function joystickDemoSetMainSourceVideo(input) {
  * @roomosxapi https://roomos.cisco.com/xapi/Command.UserInterface.Message.TextLine.Display/
  */
 async function joystickDemoSetPreviewVideo(input) {
+  if (!joystickDemoPreviewIsEnabled()) {
+    joystickDemoLog('Preview source assignment ignored because config.previewDisplay.mode is Off');
+    return;
+  }
+
   joystickDemoCurrentPreviewVideo = input;
   joystickDemoLog(`Setting Preview source to ${joystickDemoGetNameByConnectorId(input)} (ConnectorId: ${input})`);
   try {
-    await xapi.Command.Video.Matrix.Assign({ Mode: 'Replace', SourceId: input, Output: config.displays.right });
+    await xapi.Command.Video.Matrix.Assign({ Mode: 'Replace', SourceId: input, Output: config.previewDisplay.output });
     await xapi.Command.UserInterface.Message.TextLine.Display({ Text: `Preview of ${joystickDemoGetNameByConnectorId(input)}.`, X: 5000, Y: 10000 });
   } catch (err) {
-    const error = { Context: `Failed to set Preview video source, ConnectorId: ${input}, Output: ${config.displays.right}`, Error: err.message };
+    const error = { Context: `Failed to set Preview video source, ConnectorId: ${input}, Output: ${config.previewDisplay.output}`, Error: err.message };
     joystickDemoError(error, err);
     throw error;
   }
 }
 
 async function joystickDemoSetCameraControlId(input) {
-  console.log(typeof input, input);
+  await joystickDemoStopCameraMovement();
+  joystickDemoLog(`Joystick control assigned to Camera ${input} (was ${joystickDemoCurrentCamControlId})`);
+  joystickDemoCurrentCamControlId = input;
+  joystickDemoUpdateCameraRamp();
+}
+
+/**
+ * Stops every camera axis before joystick control is disabled, remapped, or
+ * assigned to a different camera.
+ * @roomosxapi https://roomos.cisco.com/xapi/Command.Camera.Ramp/
+ */
+async function joystickDemoStopCameraMovement() {
   try {
     await xapi.Command.Camera.Ramp({ Pan: 'Stop', CameraId: joystickDemoCurrentCamControlId });
     await xapi.Command.Camera.Ramp({ Tilt: 'Stop', CameraId: joystickDemoCurrentCamControlId });
@@ -545,12 +634,14 @@ async function joystickDemoSetCameraControlId(input) {
     joystickDemoError(error, err);
     throw error;
   }
-  joystickDemoLog(`Joystick control assigned to Camera ${input} (was ${joystickDemoCurrentCamControlId})`);
-  joystickDemoCurrentCamControlId = input;
-  joystickDemoUpdateCameraRamp();
 }
 
 async function joystickDemoSwapMainAndPreviewCameras() {
+  if (!joystickDemoPreviewIsEnabled()) {
+    joystickDemoLog('Main/Preview swap ignored because config.previewDisplay.mode is Off');
+    return;
+  }
+
   joystickDemoLog('Swapping Main and Preview sources');
 
   const tempVideo = joystickDemoCurrentMainVideo;
@@ -590,6 +681,10 @@ function joystickDemoHandleControlMain(state, buttonId) {
 
 function joystickDemoHandleControlPreview(state, buttonId) {
   if (state !== 'Released') return;
+  if (!joystickDemoPreviewIsEnabled()) {
+    joystickDemoLog(`${buttonId} Preview control ignored because config.previewDisplay.mode is Off`);
+    return;
+  }
 
   joystickDemoLog(`${buttonId} pressed -> control mode set to Preview`);
   joystickDemoControlling = 'preview';
@@ -672,6 +767,10 @@ function joystickDemoSelectSource(cameraButtonAction, buttonId) {
     joystickDemoSetMainSourceVideo(srcVid)
       .catch(err => joystickDemoError({ Context: `${buttonId} set Main source failed, ConnectorId: ${srcVid}`, Error: err.message }, err));
   } else {
+    if (!joystickDemoPreviewIsEnabled()) {
+      joystickDemoLog(`${buttonId} Preview camera selection ignored because config.previewDisplay.mode is Off`);
+      return;
+    }
     joystickDemoCurrentPreviewControl = srcCtrl;
     joystickDemoSetPreviewVideo(srcVid)
       .catch(err => joystickDemoError({ Context: `${buttonId} set Preview source failed, ConnectorId: ${srcVid}`, Error: err.message }, err));
@@ -688,43 +787,127 @@ async function resetJoystickDemo(end = false) {
 
   try {
     await joystickDemoSetMainSourceVideo(joystickDemoCurrentMainVideo);
-    await joystickDemoSetPreviewVideo(joystickDemoCurrentPreviewVideo);
+    if (joystickDemoPreviewIsEnabled()) {
+      await joystickDemoSetPreviewVideo(joystickDemoCurrentPreviewVideo);
+    }
     await joystickDemoSetCameraControlId(joystickDemoCurrentCamControlId);
   } catch (err) {
     joystickDemoError({ Context: 'Failed to restore default sources during reset', Error: err.message }, err);
   }
 
   if (end) {
+    if (joystickDemoPreviewIsEnabled()) {
+      try {
+        await xapi.Command.Video.Matrix.Reset({ Output: config.previewDisplay.output });
+        await xapi.Command.UserInterface.Message.TextLine.Clear();
+      } catch (err) {
+        joystickDemoError({ Context: `Failed to clear Preview on end, Output: ${config.previewDisplay.output}`, Error: err.message }, err);
+      }
+    }
+
     try {
-      await xapi.Command.Video.Matrix.Reset({ Output: config.displays.right });
-      await xapi.Command.UserInterface.Message.TextLine.Clear();
       await xapi.Command.Video.Graphics.Clear({ Target: ['MainSource'] });
     } catch (err) {
-      joystickDemoError({ Context: `Failed to clear demo overlays on end, Output: ${config.displays.right}`, Error: err.message }, err);
+      joystickDemoError({ Context: 'Failed to clear Main overlay on end', Error: err.message }, err);
     }
   }
 }
 
 /**
- * Enables the joystick while the Joystick Demo page is open and disables it when closed.
- * @roomosxapi https://roomos.cisco.com/xapi/Event.UserInterface.Extensions.Event.PageOpened/
- * @roomosxapi https://roomos.cisco.com/xapi/Event.UserInterface.Extensions.Event.PageClosed/
+ * Reflects the runtime state in both control-panel group buttons.
+ * @roomosxapi https://roomos.cisco.com/xapi/Command.UserInterface.Extensions.Widget.SetValue/
  */
-async function handleJoystickPageEvent({ PageId, Type }) {
-  if (PageId !== joystickDemoPanelId) return;
+async function joystickDemoSyncControlPanel() {
+  await xapi.Command.UserInterface.Extensions.Widget.SetValue({
+    WidgetId: joystickDemoEnabledWidgetId,
+    Value: joystickDemoEnabled ? 'enabled' : 'disabled'
+  });
+  await xapi.Command.UserInterface.Extensions.Widget.SetValue({
+    WidgetId: joystickDemoHandednessWidgetId,
+    Value: joystickDemoHandedness
+  });
+}
 
-  try {
-    if (Type === 'Opened') {
-      joystickDemoLog('Joystick Demo page opened - enabling joystick');
-      joystickDemoEnabled = true;
-      await resetJoystickDemo();
-    } else if (Type === 'Closed') {
-      joystickDemoLog('Joystick Demo page closed - disabling joystick');
-      joystickDemoEnabled = false;
-      await resetJoystickDemo(true);
-    }
-  } catch (err) {
-    joystickDemoError({ Context: `Failed to handle Joystick page event, PageId: ${PageId}, Type: ${Type}`, Error: err.message }, err);
+/**
+ * Changes whether joystick input is accepted. Panel visibility has no effect.
+ */
+async function joystickDemoSetEnabled(enabled) {
+  if (enabled === joystickDemoEnabled) {
+    await joystickDemoSyncControlPanel();
+    return;
+  }
+
+  // Disable input before any asynchronous cleanup so new joystick events cannot
+  // race the transition.
+  joystickDemoEnabled = false;
+  await resetJoystickDemo(!enabled);
+  joystickDemoEnabled = enabled;
+  joystickDemoLog(`Joystick controls ${enabled ? 'enabled' : 'disabled'}`);
+  await joystickDemoSyncControlPanel();
+}
+
+/**
+ * Remaps physical guide buttons and the Thrustmaster hardware-code lookup to
+ * the selected hand without changing the configured startup default.
+ */
+async function joystickDemoSetHandedness(handedness) {
+  if (!['left', 'right'].includes(handedness)) {
+    throw new Error(`Unsupported joystick handedness "${handedness}"`);
+  }
+  if (handedness === joystickDemoHandedness) {
+    await joystickDemoSyncControlPanel();
+    return;
+  }
+
+  const wasEnabled = joystickDemoEnabled;
+  joystickDemoEnabled = false;
+  joystickDemoResetInputState();
+  await joystickDemoStopCameraMovement();
+
+  joystickDemoHandedness = handedness;
+  joystickDemoController.setHandednessHardwareToggle(handedness);
+  joystickDemoRegisterButtons();
+  joystickDemoEnabled = wasEnabled;
+
+  joystickDemoLog(`Joystick handedness changed to ${handedness}`);
+  await joystickDemoSyncControlPanel();
+}
+
+/**
+ * Serializes control-panel changes so rapid group-button presses cannot overlap
+ * camera cleanup or handedness remapping.
+ */
+function joystickDemoQueueControlPanelAction(action, context) {
+  joystickDemoControlPanelAction = joystickDemoControlPanelAction
+    .then(action)
+    .catch(async err => {
+      joystickDemoError({ Context: context, Error: err.message }, err);
+      try {
+        await joystickDemoSyncControlPanel();
+      } catch (syncErr) {
+        joystickDemoError({ Context: 'Failed to restore Joystick Controls panel state', Error: syncErr.message }, syncErr);
+      }
+    });
+  return joystickDemoControlPanelAction;
+}
+
+/**
+ * Handles only the two exact group buttons owned by this macro.
+ * @roomosxapi https://roomos.cisco.com/xapi/Event.UserInterface.Extensions.Widget.Action/
+ */
+function joystickDemoHandleControlPanelAction({ WidgetId, Type, Value }) {
+  if (Type !== 'pressed') return;
+
+  if (WidgetId === joystickDemoEnabledWidgetId && ['enabled', 'disabled'].includes(Value)) {
+    return joystickDemoQueueControlPanelAction(
+      () => joystickDemoSetEnabled(Value === 'enabled'),
+      `Failed to set Joystick controls to ${Value}`
+    );
+  } else if (WidgetId === joystickDemoHandednessWidgetId && ['left', 'right'].includes(Value)) {
+    return joystickDemoQueueControlPanelAction(
+      () => joystickDemoSetHandedness(Value),
+      `Failed to set Joystick handedness to ${Value}`
+    );
   }
 }
 
@@ -741,10 +924,12 @@ async function handleJoystickPageEvent({ PageId, Type }) {
 async function installJoystickDemoPanel() {
   await xapi.Command.UserInterface.Extensions.Panel.Save({ PanelId: joystickDemoPanelId }, joystickDemoPanelXml);
   joystickDemoLog(`Installed UI panel "${joystickDemoPanelId}"`);
+  await joystickDemoSyncControlPanel();
 }
 
 async function init() {
   try {
+    joystickDemoValidatePreviewDisplayConfig();
     joystickDemoValidateCameraConfig();
     joystickDemoValidateControlConfig();
     joystickDemoResetTrackingState();
@@ -757,12 +942,14 @@ async function init() {
       if (joystickDemoEnabled) joystickDemoController.handleInput(data);
     });
 
-    xapi.Event.UserInterface.Extensions.Event.PageOpened.on(({ PageId }) =>
-      handleJoystickPageEvent({ PageId, Type: 'Opened' })
-    );
+    xapi.Event.UserInterface.Extensions.Widget.Action.on(joystickDemoHandleControlPanelAction);
 
-    xapi.Event.UserInterface.Extensions.Event.PageClosed.on(({ PageId }) =>
-      handleJoystickPageEvent({ PageId, Type: 'Closed' })
+    xapi.Event.UserInterface.Extensions.Event.PageOpened.on(({ PageId }) =>
+      PageId === joystickDemoPanelId &&
+        joystickDemoQueueControlPanelAction(
+          joystickDemoSyncControlPanel,
+          'Failed to refresh Joystick Controls panel state'
+        )
     );
 
     joystickDemoLog('Joystick Ready with Pan/Tilt/Zoom');

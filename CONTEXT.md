@@ -12,6 +12,9 @@ _Avoid_: Program, active feed
 The camera source staged on the secondary display before it is taken live.
 _Avoid_: Auxiliary feed, standby feed
 
+**Preview Display**:
+The local screen used to view and frame the staged Preview source before sending it to Main. Its configured mode enables or disables all Preview behavior, and its output identifies the target video matrix output.
+
 **Controlled Camera**:
 The camera whose pan, tilt, and zoom respond to joystick movement; it is associated with either Main or Preview.
 _Avoid_: Selected camera, active camera

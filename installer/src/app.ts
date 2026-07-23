@@ -236,7 +236,14 @@ export class ConfiguratorApp {
               <option value="left" ${this.state.handedness === 'left' ? 'selected' : ''}>Left-handed</option>
             </select>
           </label>
-          <label class="field"><span>Preview matrix output</span><input type="number" min="1" step="1" data-setting="previewOutput" value="${this.state.previewOutput}"></label>
+          <label class="field"><span>Preview display mode</span>
+            <select data-setting="previewMode">
+              <option value="On" ${this.state.previewMode === 'On' ? 'selected' : ''}>On</option>
+              <option value="Off" ${this.state.previewMode === 'Off' ? 'selected' : ''}>Off</option>
+            </select>
+            <small>Off prevents all Preview controls, switching, and display commands.</small>
+          </label>
+          <label class="field"><span>Preview display output</span><input type="number" min="1" step="1" data-setting="previewOutput" value="${this.state.previewOutput}"></label>
           <label class="field"><span>Camera ramp speed</span><input type="number" min="1" max="15" step="1" data-setting="baseRampSpeed" value="${this.state.baseRampSpeed}"></label>
           <label class="field"><span>Precision divisor</span><input type="number" min="0.1" step="0.1" data-setting="slowModeDivisor" value="${this.state.slowModeDivisor}"></label>
         </div>
@@ -544,7 +551,7 @@ export class ConfiguratorApp {
       <section class="print-sheet print-only">
         <header class="print-header">
           <div><span>Project</span><h1 data-project-name-output>${escapeHtml(this.state.projectName || 'Joystick Camera Control')}</h1></div>
-          <div class="print-room"><span>Room</span><strong data-room-name-output>${escapeHtml(this.state.roomName || 'Room')}</strong><small>${this.state.handedness === 'right' ? 'Right' : 'Left'}-handed switch · Preview output ${this.state.previewOutput}</small></div>
+          <div class="print-room"><span>Room</span><strong data-room-name-output>${escapeHtml(this.state.roomName || 'Room')}</strong><small>${this.state.handedness === 'right' ? 'Right' : 'Left'}-handed switch · ${this.state.previewMode === 'On' ? `Preview output ${this.state.previewOutput}` : 'Preview display off'}</small></div>
         </header>
         <div class="print-layout">
           <aside>
@@ -639,6 +646,7 @@ export class ConfiguratorApp {
       }
       input.addEventListener('change', () => {
         if (key === 'handedness') this.state.handedness = input.value as ConfiguratorState['handedness'];
+        if (key === 'previewMode') this.state.previewMode = input.value as ConfiguratorState['previewMode'];
         if (key === 'previewOutput') this.state.previewOutput = Number(input.value);
         if (key === 'baseRampSpeed') this.state.baseRampSpeed = Number(input.value);
         if (key === 'slowModeDivisor') this.state.slowModeDivisor = Number(input.value);

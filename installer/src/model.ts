@@ -1,4 +1,5 @@
 export type Handedness = 'right' | 'left';
+export type PreviewDisplayMode = 'On' | 'Off';
 export type ActionCategory = 'unused' | 'motion' | 'main' | 'preview' | 'selfview' | 'camera';
 
 export interface BuiltInAction {
@@ -28,6 +29,7 @@ export interface ConfiguratorState {
   projectName: string;
   roomName: string;
   handedness: Handedness;
+  previewMode: PreviewDisplayMode;
   previewOutput: number;
   baseRampSpeed: number;
   slowModeDivisor: number;
@@ -182,6 +184,7 @@ export function createDefaultState(): ConfiguratorState {
     projectName: 'Joystick Camera Control',
     roomName: 'Room 1',
     handedness: 'right',
+    previewMode: 'On',
     previewOutput: 2,
     baseRampSpeed: 12,
     slowModeDivisor: 2,

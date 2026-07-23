@@ -7,6 +7,7 @@ import {
   cameraAssignment,
   cameraButtonActions,
   type ConfiguratorState,
+  type PreviewDisplayMode,
 } from './model';
 
 const CONFIG_START = '/* JOYSTICK_CONFIG_START */';
@@ -24,8 +25,9 @@ export interface GeneratedMacroConfig {
     ProjectName: string;
     RoomName: string;
   };
-  displays: {
-    right: number;
+  previewDisplay: {
+    mode: PreviewDisplayMode;
+    output: number;
   };
   joystick: {
     StartingHand: 'right' | 'left';
@@ -55,6 +57,9 @@ export function validateConfiguratorState(state: ConfiguratorState): string[] {
   }
   if (!cameraIds.has(state.defaultCameraId)) {
     errors.push('Choose a configured default camera.');
+  }
+  if (state.previewMode !== 'On' && state.previewMode !== 'Off') {
+    errors.push('Preview display mode must be On or Off.');
   }
   if (!Number.isInteger(state.previewOutput) || state.previewOutput < 1) {
     errors.push('Preview output must be a positive whole number.');
@@ -128,8 +133,9 @@ export function buildMacroConfig(state: ConfiguratorState): GeneratedMacroConfig
       ProjectName: state.projectName.trim(),
       RoomName: state.roomName.trim(),
     },
-    displays: {
-      right: state.previewOutput,
+    previewDisplay: {
+      mode: state.previewMode,
+      output: state.previewOutput,
     },
     joystick: {
       StartingHand: state.handedness,
@@ -381,7 +387,6 @@ function extractConfigObjectSource(macroSource: string): string {
 
 export function parseConfiguratorStateFromMacro(macroSource: string): ConfiguratorState {
   const raw = configRecord(new ObjectLiteralParser(extractConfigObjectSource(macroSource)).parse(), 'config');
-  const displays = configRecord(raw.displays, 'config.displays');
   const joystick = configRecord(raw.joystick, 'config.joystick');
   const cameraMotion = configRecord(joystick.Camera, 'config.joystick.Camera');
   const controls = configRecord(raw.controls, 'config.controls');
@@ -430,6 +435,21 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
   const documentation = raw.documentation && typeof raw.documentation === 'object' && !Array.isArray(raw.documentation)
     ? raw.documentation as Record<string, unknown>
     : {};
+  let previewMode: PreviewDisplayMode;
+  let previewOutput: number;
+  if (raw.previewDisplay !== undefined) {
+    const previewDisplay = configRecord(raw.previewDisplay, 'config.previewDisplay');
+    const parsedMode = configString(previewDisplay.mode, 'config.previewDisplay.mode');
+    if (parsedMode !== 'On' && parsedMode !== 'Off') {
+      throw new Error('config.previewDisplay.mode must be "On" or "Off".');
+    }
+    previewMode = parsedMode;
+    previewOutput = configNumber(previewDisplay.output, 'config.previewDisplay.output');
+  } else {
+    const displays = configRecord(raw.displays, 'config.displays');
+    previewMode = 'On';
+    previewOutput = configNumber(displays.right, 'config.displays.right');
+  }
   const state: ConfiguratorState = {
     projectName: typeof documentation.ProjectName === 'string' && documentation.ProjectName.trim()
       ? documentation.ProjectName
@@ -438,7 +458,8 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
       ? documentation.RoomName
       : 'Room 1',
     handedness,
-    previewOutput: configNumber(displays.right, 'config.displays.right'),
+    previewMode,
+    previewOutput,
     baseRampSpeed: configNumber(cameraMotion.BaseRampSpeed, 'config.joystick.Camera.BaseRampSpeed'),
     slowModeDivisor: configNumber(cameraMotion.SlowModeDivisor, 'config.joystick.Camera.SlowModeDivisor'),
     cameras,

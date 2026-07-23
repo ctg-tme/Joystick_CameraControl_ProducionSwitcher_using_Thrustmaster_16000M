@@ -4,7 +4,7 @@ A standalone RoomOS solution that uses a Thrustmaster T.16000M joystick to stage
 
 The solution includes:
 
-- `Joystick_CameraControl_ProductionSwitcher.js` — the macro and its self-installed `Joystick Demo` UI panel.
+- `Joystick_CameraControl_ProductionSwitcher.js` — the macro and its self-installed `Joystick Controls` UI panel.
 - `installer/` — the browser configurator, device installer, and printable operator guide.
 - `Guides/thrustmaster16000m-camera-guide.html` — the original extracted control reference.
 - `CONTEXT.md` — canonical operator terminology.
@@ -86,6 +86,26 @@ The editable `config` block is near the top of the macro and is bounded by `JOYS
 - a generated camera-selection action from `config.cameras`;
 
 `config.documentation.ProjectName` and `RoomName` preserve the printable identity when the macro is uploaded or fetched back into the configurator. They do not affect RoomOS runtime behavior.
+
+`config.previewDisplay` defines the local Preview capability:
+
+```js
+previewDisplay: {
+  mode: 'On',
+  output: 2
+}
+```
+
+`mode` accepts `'On'` or `'Off'`. When it is `'Off'`, Preview source selection, Preview camera control, Main/Preview swapping, matrix assignment, Preview messages, and Preview cleanup do not run. `output` is the video matrix output where the local Preview is shown when the mode is `'On'`.
+
+### Runtime control panel
+
+The self-installed `Joystick Controls` panel has two full-width group buttons:
+
+- **Joystick controls** — `Disabled` or `Enabled`. The macro starts disabled. Closing the panel does not change the selection, so panel visibility and joystick operation are independent.
+- **Handedness** — `Left-handed` or `Right-handed`. Changing it immediately remaps the physical guide buttons and the Thrustmaster hardware-code lookup. Match this selection to the physical switch on the bottom of the joystick.
+
+`config.joystick.StartingHand` sets the handedness selected after a macro runtime restart. A panel change is runtime state and does not rewrite the macro configuration.
 
 `config.controls` is keyed by the physical guide button number, so its public interface stays ordered from `1` through `16`. All 16 buttons must appear, including unused buttons:
 
@@ -198,7 +218,7 @@ The three analog axes are intentionally fixed and are not button actions:
 3. Import `Joystick_CameraControl_ProductionSwitcher.js`.
 4. Save and activate the solution macro.
 5. Restart the macro runtime. This restarts every active macro on the device.
-6. Open the self-installed `Joystick Demo` panel to enable joystick handling. Closing the page disables joystick handling and clears the overlays.
+6. Open the self-installed `Joystick Controls` panel, confirm the handedness, and select `Enabled`. Select `Disabled` to stop joystick handling; opening or closing the panel alone has no effect.
 
 ## Development
 

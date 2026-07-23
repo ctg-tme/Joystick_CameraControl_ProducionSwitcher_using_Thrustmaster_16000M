@@ -26,6 +26,10 @@ describe('joystick configuration generation', () => {
     expect(config.controls[12]).toBe('SelectCamera1');
     expect(config.cameras[0].ButtonAction).toBe('SelectCamera1');
     expect(config.joystick.DefaultCameraAction).toBe('SelectCamera1');
+    expect(config.previewDisplay).toEqual({
+      mode: 'On',
+      output: 2,
+    });
     expect(config.documentation).toEqual({
       ProjectName: 'Joystick Camera Control',
       RoomName: 'Room 1',
@@ -46,6 +50,13 @@ describe('joystick configuration generation', () => {
     state.assignments[9] = builtInAssignment('');
 
     expect(validateConfiguratorState(state)).toEqual([]);
+  });
+
+  it('rejects an unsupported Preview display mode', () => {
+    const state = createDefaultState();
+    state.previewMode = 'Standby' as typeof state.previewMode;
+
+    expect(validateConfiguratorState(state)).toContain('Preview display mode must be On or Off.');
   });
 
   it('rejects a camera that appears on more than one button', () => {
@@ -76,6 +87,7 @@ describe('joystick configuration generation', () => {
     const state = createDefaultState();
     state.projectName = 'Executive Briefing Controls';
     state.roomName = 'New York EBC';
+    state.previewMode = 'Off';
     state.assignments[2] = builtInAssignment('SelfviewOff');
     const template = [
       'const unrelatedCode = () => "not evaluated";',
@@ -88,6 +100,8 @@ describe('joystick configuration generation', () => {
 
     expect(recovered.projectName).toBe('Executive Briefing Controls');
     expect(recovered.roomName).toBe('New York EBC');
+    expect(recovered.previewMode).toBe('Off');
+    expect(recovered.previewOutput).toBe(2);
     expect(recovered.cameras.map((camera) => camera.Name)).toEqual(['Camera 1', 'Camera 2', 'Camera 3', 'Camera 4']);
     expect(recovered.assignments[2]).toBe(builtInAssignment('SelfviewOff'));
     expect(recovered.assignments[12]).toBe(cameraAssignment('camera-1'));
@@ -122,6 +136,8 @@ describe('joystick configuration generation', () => {
 
     expect(recovered.projectName).toBe('Joystick Camera Control');
     expect(recovered.roomName).toBe('Room 1');
+    expect(recovered.previewMode).toBe('On');
+    expect(recovered.previewOutput).toBe(2);
     expect(recovered.cameras[0].Name).toBe('Legacy Camera');
     expect(recovered.assignments[12]).toBe(cameraAssignment('camera-1'));
     expect(recovered.assignments[2]).toBe(builtInAssignment(''));
