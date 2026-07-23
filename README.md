@@ -193,4 +193,4 @@ The initial implementation was isolated from [infocomm-2026-AVoIP-RoomCustomizat
 
 ## License
 
-This repository's sample code and documentation are provided under the [Cisco Sample Code License, Version 1.1](LICENSE). The external Thrustmaster class and browser dependencies remain subject to their own licenses.
+This repository's sample code and documentation are provided under the [Cisco Sample Code License, Version 1.1](LICENSE). The vendored [Magnetic Common Design System light-theme tokens](installer/src/vendor/magnetic/README.md) are provided under their included MIT license. The external Thrustmaster class and other browser dependencies remain subject to their own licenses.

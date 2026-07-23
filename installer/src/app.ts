@@ -348,7 +348,7 @@ export class ConfiguratorApp {
                 <span>${this.verifiedDevice.activeCalls === 0 ? 'No active calls' : `${this.verifiedDevice.activeCalls} active call(s) — installation blocked`}</span>
               </div>` : '<div class="device-result neutral"><strong>Not connected</strong><span>Trust the certificate, then connect and verify the exact device.</span></div>'}
             <label class="acknowledgement"><input id="restart-ack" type="checkbox" ${this.restartAcknowledged ? 'checked' : ''}><span>I understand that installation restarts every active macro on this device.</span></label>
-            <button class="button install-button" id="install-device" type="button" ${canInstall ? '' : 'disabled'}>Install configured solution</button>
+            <button class="button primary install-button" id="install-device" type="button" ${canInstall ? '' : 'disabled'}>Install configured solution</button>
           </div>
         </div>
         ${this.statusMessage ? `<div class="callout progress"><strong>Installation progress</strong><p>${escapeHtml(this.statusMessage)}</p></div>` : ''}

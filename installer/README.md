@@ -55,3 +55,10 @@ The dependency source is fetched only when the operator starts installation. It 
 ## GitHub Pages
 
 The Vite base is relative so the built app works from a repository subpath. The repository workflow builds and deploys `installer/dist` through GitHub Pages.
+
+## Design system
+
+The page uses a framework-free adaptation of Cisco's Magnetic Common Design
+System. The generated light-theme variables are vendored unchanged under
+`src/vendor/magnetic`, with their upstream MIT license and source revision.
+Local component and print styling in `src/styles.css` consumes those tokens.
