@@ -1,0 +1,22 @@
+{
+  "name": "joystick-camera-control-installer",
+  "private": true,
+  "version": "0.1.0",
+  "license": "LicenseRef-Cisco-Sample-Code-1.1",
+  "type": "module",
+  "scripts": {
+    "prepare:assets": "node scripts/prepare-assets.mjs",
+    "dev": "npm run prepare:assets && vite --host 127.0.0.1 --port 5177",
+    "build": "npm run prepare:assets && tsc --noEmit && vite build",
+    "test": "npm run prepare:assets && vitest run"
+  },
+  "dependencies": {
+    "jsxapi": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}
