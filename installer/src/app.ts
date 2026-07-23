@@ -1,6 +1,12 @@
-import { generateConfigSource, generateConfiguredMacro, validateConfiguratorState } from './config';
+import {
+  generateConfigSource,
+  generateConfiguredMacro,
+  parseConfiguratorStateFromMacro,
+  validateConfiguratorState,
+} from './config';
 import {
   connectToDevice,
+  fetchMacroSource,
   installAndVerify,
   normalizeDeviceHost,
   verifyConnectedDevice,
@@ -11,12 +17,14 @@ import {
 } from './device';
 import {
   BUILT_IN_ACTIONS,
+  DEFAULT_ASSIGNMENTS,
   PHYSICAL_BUTTONS,
   assignmentActionId,
   assignmentCameraId,
   builtInAssignment,
   cameraAssignment,
   cameraButtonActions,
+  createDefaultAssignments,
   createDefaultState,
   logicalButtonId,
   type ActionCategory,
@@ -26,6 +34,10 @@ import {
 import { loadDependencySource, loadInstallerSources, type InstallerSources } from './source';
 
 const UNUSED_ASSIGNMENT = builtInAssignment('');
+const DEFAULT_CAMERA_BUTTONS = [12, 11, 15, 16] as const;
+const PROJECT_REPOSITORY_URL = 'https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M';
+const CLASS_REPOSITORY_URL = 'https://github.com/ctg-tme/Thrustmaster_16000M-InputDevice-Class';
+const JOYSTICK_DOCUMENTATION_URL = 'https://support.thrustmaster.com/en/product/t16000mfcs-en/';
 
 function escapeHtml(value: unknown): string {
   return String(value)
@@ -63,6 +75,8 @@ export class ConfiguratorApp {
   private busy = false;
   private statusMessage = '';
   private errorMessage = '';
+  private configurationMessage = '';
+  private configurationError = '';
   private installResult?: InitializationResult;
 
   constructor(private readonly root: HTMLElement) {}
@@ -79,6 +93,44 @@ export class ConfiguratorApp {
 
   private cameraById(cameraId: string | undefined): CameraDefinition | undefined {
     return this.state.cameras.find((camera) => camera.id === cameraId);
+  }
+
+  private defaultAssignments(): Record<number, string> {
+    const assignments = createDefaultAssignments();
+    for (const button of PHYSICAL_BUTTONS) {
+      if (assignmentCameraId(DEFAULT_ASSIGNMENTS[button.number])) {
+        assignments[button.number] = UNUSED_ASSIGNMENT;
+      }
+    }
+    this.state.cameras.forEach((camera, index) => {
+      const button = DEFAULT_CAMERA_BUTTONS[index];
+      if (button) assignments[button] = cameraAssignment(camera.id);
+    });
+    return assignments;
+  }
+
+  private restoreDefaultControls(): void {
+    this.state.assignments = this.defaultAssignments();
+    this.configurationError = '';
+    this.configurationMessage = 'All 16 buttons were restored to the documented default controls.';
+    this.render();
+  }
+
+  private restoreDefaultButton(buttonNumber: number): void {
+    const assignment = this.defaultAssignments()[buttonNumber];
+    if (assignment === undefined) return;
+    const cameraId = assignmentCameraId(assignment);
+    if (cameraId) {
+      for (const button of PHYSICAL_BUTTONS) {
+        if (button.number !== buttonNumber && this.state.assignments[button.number] === assignment) {
+          this.state.assignments[button.number] = UNUSED_ASSIGNMENT;
+        }
+      }
+    }
+    this.state.assignments[buttonNumber] = assignment;
+    this.configurationError = '';
+    this.configurationMessage = `Button ${buttonNumber} was restored to its default action.`;
+    this.render();
   }
 
   private assignmentInfo(assignment: string): AssignmentInfo {
@@ -114,12 +166,13 @@ export class ConfiguratorApp {
     };
   }
 
-  private actionOptions(selected: string): string {
+  private actionOptions(selected: string, buttonNumber: number): string {
+    const defaultAssignment = this.defaultAssignments()[buttonNumber];
     const actionOptions = BUILT_IN_ACTIONS.map((action) =>
-      `<option value="${escapeHtml(builtInAssignment(action.id))}" ${selected === builtInAssignment(action.id) ? 'selected' : ''}>${escapeHtml(action.label)}</option>`
+      `<option value="${escapeHtml(builtInAssignment(action.id))}" ${selected === builtInAssignment(action.id) ? 'selected' : ''}>${escapeHtml(action.label)}${defaultAssignment === builtInAssignment(action.id) ? ' · Default' : ''}</option>`
     ).join('');
     const cameraOptions = this.state.cameras.map((camera) =>
-      `<option value="${escapeHtml(cameraAssignment(camera.id))}" ${selected === cameraAssignment(camera.id) ? 'selected' : ''}>Camera · ${escapeHtml(camera.Name || 'Unnamed camera')}</option>`
+      `<option value="${escapeHtml(cameraAssignment(camera.id))}" ${selected === cameraAssignment(camera.id) ? 'selected' : ''}>Camera · ${escapeHtml(camera.Name || 'Unnamed camera')}${defaultAssignment === cameraAssignment(camera.id) ? ' · Default' : ''}</option>`
     ).join('');
     return `
       <optgroup label="Built-in actions">${actionOptions}</optgroup>
@@ -142,18 +195,27 @@ export class ConfiguratorApp {
     return `
       <header class="hero">
         <div class="hero-copy">
-          <span class="eyebrow">RoomOS · Thrustmaster T.16000M</span>
-          <h1>Configure the controls.<br><span>Install with confidence.</span></h1>
-          <p>Build a complete 16-button map, add up to four cameras, install the configured macro directly on a RoomOS device, and print the same mapping as an operator guide.</p>
+          <span class="eyebrow">RoomOS joystick camera control</span>
+          <h1>Thrustmaster T.16000M production controller</h1>
+          <p>This standalone RoomOS macro turns a T.16000M joystick into a configurable controller for up to four camera sources. Operators can choose whether the joystick controls Main or Preview, frame supported PTZ cameras, and swap the staged source live.</p>
           <div class="hero-actions no-print">
             <a class="button primary" href="#configure">Start configuring</a>
-            <button class="button secondary" id="print-guide" type="button">Print operator guide</button>
+            <button class="button secondary" data-open-about type="button">About this project</button>
           </div>
         </div>
-        <div class="hero-summary">
-          <div><strong>16</strong><span>buttons explicitly mapped</span></div>
-          <div><strong>4</strong><span>camera maximum</span></div>
-          <div><strong>1</strong><span>configured macro</span></div>
+        <div class="hero-requirements">
+          <span class="eyebrow">Hardware prerequisites</span>
+          <ul>
+            <li><strong>Cisco codec</strong><span>A RoomOS device with support for the InputDevice Joystick APIs.</span></li>
+            <li><strong>Thrustmaster T.16000M</strong><span>The USB joystick used for all fixed axis and configurable button input.</span></li>
+            <li><strong>Cisco certified cameras</strong><span>Supported cameras provide joystick pan, tilt, and zoom control.</span></li>
+          </ul>
+          <div class="hardware-note"><strong>Other video sources</strong><p>USB and uncertified cameras can be visible and switched, but they are not joystick-controllable by this solution. Additional integration or macro development is required.</p></div>
+          <div class="resource-links no-print">
+            <a href="${JOYSTICK_DOCUMENTATION_URL}" target="_blank" rel="noreferrer">Joystick documentation</a>
+            <a href="${PROJECT_REPOSITORY_URL}" target="_blank" rel="noreferrer">Project repository</a>
+            <a href="${CLASS_REPOSITORY_URL}" target="_blank" rel="noreferrer">InputDevice class</a>
+          </div>
         </div>
       </header>`;
   }
@@ -166,7 +228,8 @@ export class ConfiguratorApp {
           <p>These values drive the macro and the printable guide.</p>
         </div>
         <div class="settings-grid">
-          <label class="field wide"><span>Guide title</span><input data-setting="documentTitle" value="${escapeHtml(this.state.documentTitle)}"></label>
+          <label class="field project-field"><span>Project name</span><input data-setting="projectName" value="${escapeHtml(this.state.projectName)}"></label>
+          <label class="field"><span>Room name</span><input data-setting="roomName" value="${escapeHtml(this.state.roomName)}"></label>
           <label class="field"><span>Physical handedness switch</span>
             <select data-setting="handedness">
               <option value="right" ${this.state.handedness === 'right' ? 'selected' : ''}>Right-handed</option>
@@ -176,6 +239,21 @@ export class ConfiguratorApp {
           <label class="field"><span>Preview matrix output</span><input type="number" min="1" step="1" data-setting="previewOutput" value="${this.state.previewOutput}"></label>
           <label class="field"><span>Camera ramp speed</span><input type="number" min="1" max="15" step="1" data-setting="baseRampSpeed" value="${this.state.baseRampSpeed}"></label>
           <label class="field"><span>Precision divisor</span><input type="number" min="0.1" step="0.1" data-setting="slowModeDivisor" value="${this.state.slowModeDivisor}"></label>
+        </div>
+        <div class="config-recovery">
+          <div>
+            <strong>Resume an existing configuration</strong>
+            <p>Upload a previously generated macro, or connect and verify a device below to fetch the installed macro. Only the marked configuration is read; macro code is never executed.</p>
+          </div>
+          <div class="recovery-actions">
+            <label class="button secondary file-button">Upload macro
+              <input id="import-macro-file" type="file" accept=".js,.txt,text/javascript">
+            </label>
+            <button class="button secondary" id="fetch-device-macro" type="button" ${this.device && this.verifiedDevice?.serialMatches && this.sources && !this.busy ? '' : 'disabled'}>Fetch installed macro</button>
+            ${this.device ? '' : '<a href="#install">Connect a device first</a>'}
+          </div>
+          ${this.configurationMessage ? `<div class="callout success"><strong>Configuration updated</strong><p>${escapeHtml(this.configurationMessage)}</p></div>` : ''}
+          ${this.configurationError ? `<div class="callout error"><strong>Configuration not loaded</strong><p>${escapeHtml(this.configurationError)}</p></div>` : ''}
         </div>
       </section>`;
   }
@@ -233,7 +311,10 @@ export class ConfiguratorApp {
       <section class="panel section button-map-section" id="button-map">
         <div class="section-heading">
           <div><span class="section-kicker">03 · Controls</span><h2>Complete button map</h2></div>
-          <p class="no-print">Click a numbered pin to jump to its assignment. Camera selections move automatically if selected on another button.</p>
+          <div class="section-heading-tools no-print">
+            <p>Default labels show the documented starting map. Change any button, or restore the complete default set.</p>
+            <button class="button secondary" id="restore-default-controls" type="button">Restore all defaults</button>
+          </div>
           <p class="print-only">Configured for the ${this.state.handedness}-handed hardware switch position.</p>
         </div>
         <div class="map-layout">
@@ -254,12 +335,13 @@ export class ConfiguratorApp {
             ${PHYSICAL_BUTTONS.map((button) => {
               const assignment = this.state.assignments[button.number];
               const info = this.assignmentInfo(assignment);
+              const isDefault = assignment === this.defaultAssignments()[button.number];
               return `
                 <article class="assignment-row" id="button-row-${button.number}">
                   <span class="chip ${info.category}">${button.number}</span>
                   <div class="assignment-name"><strong>${escapeHtml(button.label)}</strong><code>${escapeHtml(logicalButtonId(button, this.state.handedness))}</code></div>
-                  <label class="field compact no-print"><span>ButtonAction</span><select data-button-number="${button.number}">${this.actionOptions(assignment)}</select></label>
-                  <div class="assignment-result"><strong>${escapeHtml(info.label)}</strong><span>${escapeHtml(info.description)}</span></div>
+                  <label class="field compact no-print"><span>ButtonAction ${isDefault ? '<em class="default-badge">Default</em>' : ''}</span><select data-button-number="${button.number}">${this.actionOptions(assignment, button.number)}</select></label>
+                  <div class="assignment-result"><strong>${escapeHtml(info.label)}</strong><span>${escapeHtml(info.description)}</span>${isDefault ? '' : `<button class="restore-button no-print" type="button" data-restore-button="${button.number}">Restore Button ${button.number} default</button>`}</div>
                 </article>`;
             }).join('')}
           </div>
@@ -282,6 +364,47 @@ export class ConfiguratorApp {
             </article>`).join('')}
         </div>
       </section>`;
+  }
+
+  private renderAboutModal(): string {
+    const cameraActions = cameraButtonActions(this.state.cameras);
+    return `
+      <dialog class="about-dialog no-print" id="about-dialog" aria-labelledby="about-title">
+        <div class="about-shell">
+          <header>
+            <div><span class="section-kicker">About</span><h2 id="about-title">Joystick Camera Control</h2></div>
+            <form method="dialog"><button class="icon-button" type="submit" aria-label="Close About dialog">×</button></form>
+          </header>
+          <div class="about-content">
+            <section>
+              <h3>Project purpose</h3>
+              <p>This Cisco sample uses RoomOS InputDevice Joystick APIs and a reusable T.16000M class to provide camera selection, PTZ control, Main/Preview targeting, source swapping, and selfview controls from one USB joystick.</p>
+              <div class="about-links">
+                <a href="${JOYSTICK_DOCUMENTATION_URL}" target="_blank" rel="noreferrer">Thrustmaster documentation</a>
+                <a href="${PROJECT_REPOSITORY_URL}" target="_blank" rel="noreferrer">Project source</a>
+                <a href="${CLASS_REPOSITORY_URL}" target="_blank" rel="noreferrer">T.16000M InputDevice class</a>
+              </div>
+            </section>
+            <section>
+              <h3>Built-in Action Definitions</h3>
+              <div class="definition-list">
+                ${BUILT_IN_ACTIONS.map((action) => `
+                  <article><code>${escapeHtml(action.id || "''")}</code><div><strong>${escapeHtml(action.label)}</strong><p>${escapeHtml(action.description)}</p></div></article>
+                `).join('')}
+              </div>
+            </section>
+            <section>
+              <h3>Configured Camera Action Definitions</h3>
+              <div class="definition-list">
+                ${this.state.cameras.map((camera) => `
+                  <article><code>${escapeHtml(cameraActions.get(camera.id) ?? '')}</code><div><strong>${escapeHtml(camera.Name)}</strong><p>Selects this source for the active Main or Preview target. Joystick PTZ requires a supported Cisco camera ControlId.</p></div></article>
+                `).join('')}
+              </div>
+            </section>
+          </div>
+          <footer><form method="dialog"><button class="button primary" type="submit">Close</button></form></footer>
+        </div>
+      </dialog>`;
   }
 
   private renderOutput(): string {
@@ -367,8 +490,8 @@ export class ConfiguratorApp {
       <section class="operator-guide" id="operator-guide">
         <div class="guide-header">
           <span class="section-kicker">Printable operator documentation</span>
-          <h2>${escapeHtml(this.state.documentTitle || 'Joystick Camera Control')}</h2>
-          <p>Thrustmaster T.16000M camera operation · ${this.state.handedness === 'right' ? 'Right' : 'Left'}-handed hardware switch</p>
+          <h2 data-project-name-output>${escapeHtml(this.state.projectName || 'Joystick Camera Control')}</h2>
+          <p><strong data-room-name-output>${escapeHtml(this.state.roomName || 'Room')}</strong> · Thrustmaster T.16000M camera operation · ${this.state.handedness === 'right' ? 'Right' : 'Left'}-handed hardware switch</p>
         </div>
         <div class="workflow-grid">
           <article><span>1</span><strong>Choose the target</strong><p>${this.buttonChips(mainButtons, 'main')} controls Main. ${this.buttonChips(previewButtons, 'preview')} controls Preview.</p></article>
@@ -409,12 +532,80 @@ export class ConfiguratorApp {
       </section>`;
   }
 
+  private renderPrintSheet(): string {
+    const cameraActions = cameraButtonActions(this.state.cameras);
+    const targetActions = [
+      ['ControlMain', 'Control Main'],
+      ['ControlPreview', 'Control Preview'],
+      ['SwapMainPreview', 'Swap Main/Preview'],
+      ['PrecisionMode', 'Precision mode'],
+    ];
+    return `
+      <section class="print-sheet print-only">
+        <header class="print-header">
+          <div><span>Project</span><h1 data-project-name-output>${escapeHtml(this.state.projectName || 'Joystick Camera Control')}</h1></div>
+          <div class="print-room"><span>Room</span><strong data-room-name-output>${escapeHtml(this.state.roomName || 'Room')}</strong><small>${this.state.handedness === 'right' ? 'Right' : 'Left'}-handed switch · Preview output ${this.state.previewOutput}</small></div>
+        </header>
+        <div class="print-layout">
+          <aside>
+            <div class="print-section-title"><span>01</span><h2>Joystick map</h2></div>
+            ${this.renderDiagram()}
+            <div class="legend">
+              ${[
+                ['main', 'Main'],
+                ['preview', 'Preview'],
+                ['camera', 'Camera'],
+                ['motion', 'Motion / swap'],
+                ['selfview', 'Selfview'],
+                ['unused', 'No action'],
+              ].map(([category, label]) => `<span><i class="${category}"></i>${label}</span>`).join('')}
+            </div>
+            <div class="print-quick-use">
+              <h3>Quick operation</h3>
+              <p><strong>1.</strong> Choose Main or Preview. <strong>2.</strong> Choose a camera. <strong>3.</strong> Tilt with stick pitch, pan with twist, and zoom with mini-stick pitch. <strong>4.</strong> Frame Preview, then swap it live.</p>
+              <div class="print-action-chips">
+                ${targetActions.map(([id, label]) => `<span><strong>${escapeHtml(label)}</strong>${this.buttonChips(this.assignedButtons(id), this.assignmentInfo(builtInAssignment(id)).category)}</span>`).join('')}
+              </div>
+            </div>
+          </aside>
+          <div class="print-reference">
+            <div class="print-section-title"><span>02</span><h2>Button reference</h2></div>
+            <table class="print-button-table">
+              <thead><tr><th>#</th><th>Physical control</th><th>Action</th><th>Operator result</th></tr></thead>
+              <tbody>
+                ${PHYSICAL_BUTTONS.map((button) => {
+                  const info = this.assignmentInfo(this.state.assignments[button.number]);
+                  return `<tr><td><span class="chip ${info.category}">${button.number}</span></td><td><strong>${escapeHtml(button.label)}</strong><code>${escapeHtml(logicalButtonId(button, this.state.handedness))}</code></td><td><strong>${escapeHtml(info.label)}</strong><code>${escapeHtml(info.code)}</code></td><td>${escapeHtml(info.description)}</td></tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+            <div class="print-camera-reference">
+              <div class="print-section-title"><span>03</span><h2>Camera reference</h2></div>
+              <table>
+                <thead><tr><th>Camera</th><th>Button</th><th>ButtonAction</th><th>Video</th><th>Control</th></tr></thead>
+                <tbody>
+                  ${this.state.cameras.map((camera) => {
+                    const button = PHYSICAL_BUTTONS.find((candidate) => this.state.assignments[candidate.number] === cameraAssignment(camera.id));
+                    return `<tr><td><strong>${escapeHtml(camera.Name)}</strong></td><td>${button ? `<span class="chip camera">${button.number}</span>` : '-'}</td><td><code>${escapeHtml(cameraActions.get(camera.id) ?? '')}</code></td><td>${escapeHtml(camera.ConnectorId)}</td><td>${escapeHtml(camera.ControlId)}</td></tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <footer class="print-footer">
+          <span>Joystick Camera Control · Cisco Sample Code</span>
+          <span>USB or uncertified cameras may be switched but require additional development for joystick PTZ.</span>
+        </footer>
+      </section>`;
+  }
+
   private render(): void {
     this.root.innerHTML = `
       <div class="site-shell">
         <nav class="topbar no-print">
           <a href="#" class="wordmark"><span>JC</span><strong>Joystick Camera Control</strong></a>
-          <div><a href="#configure">Configure</a><a href="#button-map">Button map</a><a href="#install">Install</a><a href="#operator-guide">Guide</a></div>
+          <div><a href="#configure">Configure</a><a href="#button-map">Button map</a><a href="#install">Install</a><a href="#operator-guide">Guide</a><button class="nav-button" data-open-about type="button">About</button></div>
         </nav>
         <main>
           ${this.renderHeader()}
@@ -429,15 +620,24 @@ export class ConfiguratorApp {
           </div>
         </main>
         <footer class="site-footer no-print">Cisco Sample Code · Configuration and credentials remain in this browser session.</footer>
-      </div>`;
+        ${this.renderAboutModal()}
+      </div>
+      ${this.renderPrintSheet()}`;
     this.bindEvents();
   }
 
   private bindEvents(): void {
     this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => {
+      const key = input.dataset.setting as keyof ConfiguratorState;
+      if (key === 'projectName' || key === 'roomName') {
+        input.addEventListener('input', () => {
+          if (key === 'projectName') this.state.projectName = input.value;
+          if (key === 'roomName') this.state.roomName = input.value;
+          this.syncDocumentMetadata();
+        });
+        return;
+      }
       input.addEventListener('change', () => {
-        const key = input.dataset.setting as keyof ConfiguratorState;
-        if (key === 'documentTitle') this.state.documentTitle = input.value;
         if (key === 'handedness') this.state.handedness = input.value as ConfiguratorState['handedness'];
         if (key === 'previewOutput') this.state.previewOutput = Number(input.value);
         if (key === 'baseRampSpeed') this.state.baseRampSpeed = Number(input.value);
@@ -480,6 +680,17 @@ export class ConfiguratorApp {
       });
     });
 
+    this.root.querySelectorAll<HTMLButtonElement>('[data-restore-button]').forEach((button) => {
+      button.addEventListener('click', () => this.restoreDefaultButton(Number(button.dataset.restoreButton)));
+    });
+
+    this.root.querySelectorAll<HTMLButtonElement>('[data-open-about]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const dialog = this.byId('about-dialog') as HTMLDialogElement | null;
+        if (dialog && !dialog.open) dialog.showModal();
+      });
+    });
+
     this.root.querySelectorAll<HTMLButtonElement>('[data-remove-camera]').forEach((button) => {
       button.addEventListener('click', () => {
         const cameraId = button.dataset.removeCamera;
@@ -496,13 +707,17 @@ export class ConfiguratorApp {
     });
 
     this.byId('add-camera')?.addEventListener('click', () => this.addCamera());
+    this.byId('restore-default-controls')?.addEventListener('click', () => this.restoreDefaultControls());
+    this.byId('import-macro-file')?.addEventListener('change', (event) => {
+      void this.importMacroFile(event.currentTarget as HTMLInputElement);
+    });
+    this.byId('fetch-device-macro')?.addEventListener('click', () => void this.fetchInstalledMacro());
     this.byId('default-camera')?.addEventListener('change', (event) => {
       this.state.defaultCameraId = (event.currentTarget as HTMLSelectElement).value;
       this.render();
     });
     this.byId('download-macro')?.addEventListener('click', () => this.downloadConfiguredMacro());
     this.byId('copy-config')?.addEventListener('click', () => void this.copyConfiguration());
-    this.byId('print-guide')?.addEventListener('click', () => window.print());
     this.byId('print-guide-output')?.addEventListener('click', () => window.print());
     this.byId('trust-certificate')?.addEventListener('click', () => this.openCertificatePage());
     this.byId('connect-device')?.addEventListener('click', () => void this.connectDevice());
@@ -516,6 +731,60 @@ export class ConfiguratorApp {
 
   private byId(id: string): HTMLElement | null {
     return this.root.querySelector(`#${id}`);
+  }
+
+  private syncDocumentMetadata(): void {
+    this.root.querySelectorAll<HTMLElement>('[data-project-name-output]').forEach((element) => {
+      element.textContent = this.state.projectName || 'Joystick Camera Control';
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-room-name-output]').forEach((element) => {
+      element.textContent = this.state.roomName || 'Room';
+    });
+    const preview = this.root.querySelector<HTMLElement>('.code-preview code');
+    if (preview && !validateConfiguratorState(this.state).length) {
+      preview.textContent = generateConfigSource(this.state);
+    }
+  }
+
+  private loadConfigurationSource(source: string, message: string): void {
+    this.state = parseConfiguratorStateFromMacro(source);
+    this.restartAcknowledged = false;
+    this.configurationError = '';
+    this.configurationMessage = message;
+  }
+
+  private async importMacroFile(input: HTMLInputElement): Promise<void> {
+    const file = input.files?.[0];
+    if (!file) return;
+    this.configurationMessage = '';
+    this.configurationError = '';
+    try {
+      if (file.size > 1024 * 1024) throw new Error('Choose a macro smaller than 1 MiB.');
+      this.loadConfigurationSource(await file.text(), `Loaded ${file.name}. Review the recovered settings before downloading or installing.`);
+    } catch (error) {
+      this.configurationError = error instanceof Error ? error.message : String(error);
+    }
+    this.render();
+  }
+
+  private async fetchInstalledMacro(): Promise<void> {
+    if (!this.device || !this.verifiedDevice?.serialMatches || !this.sources) return;
+    this.configurationMessage = '';
+    this.configurationError = '';
+    this.busy = true;
+    this.statusMessage = `Reading ${this.sources.manifest.macro.macroName} from the verified device.`;
+    this.render();
+    try {
+      const source = await fetchMacroSource(this.device, this.sources.manifest.macro.macroName);
+      this.loadConfigurationSource(source, `Fetched ${this.sources.manifest.macro.macroName} from the verified device. Review the recovered settings before installing changes.`);
+      this.statusMessage = 'The installed macro configuration was loaded without changing the device.';
+    } catch (error) {
+      this.configurationError = error instanceof Error ? error.message : String(error);
+      this.statusMessage = 'The device was not changed.';
+    } finally {
+      this.busy = false;
+      this.render();
+    }
   }
 
   private addCamera(): void {

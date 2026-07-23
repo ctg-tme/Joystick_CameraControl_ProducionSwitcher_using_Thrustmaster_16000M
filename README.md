@@ -15,12 +15,15 @@ The macro is extracted from the InfoComm 2026 demo without the demo's unrelated 
 
 The browser configurator is the recommended path:
 
-1. Add one to four cameras. A readable camera `ButtonAction`, such as `SelectQuadCamera`, is generated from each name.
-2. Assign every physical button with a dropdown. Choose **No action** to generate a blank value.
-3. Review or download the generated macro.
-4. Enter the exact RoomOS device address, administrator credentials, and expected serial number.
-5. Connect and verify the device, acknowledge the macro runtime restart, then install.
-6. Print the same mapping as an operator guide.
+1. Name the project and room for the printable operator guide.
+2. Add one to four cameras. A readable camera `ButtonAction`, such as `SelectCamera1`, is generated from each name.
+3. Assign every physical button with a dropdown. Default assignments are marked and can be restored individually or as a complete set.
+4. Review or download the generated macro.
+5. Enter the exact RoomOS device address, administrator credentials, and expected serial number.
+6. Connect and verify the device, acknowledge the macro runtime restart, then install.
+7. Print the current mapping as a color, single-page operator guide.
+
+To resume earlier work, upload a previously generated macro or fetch the installed macro after connecting and verifying the exact device. The configurator reads only the marked configuration object and never executes imported macro code.
 
 The installer:
 
@@ -30,7 +33,22 @@ The installer:
 - restarts the RoomOS macro runtime once, which restarts every active macro;
 - waits for the solution macro to report that joystick initialization is ready.
 
+Fetching an installed configuration uses `Macros Macro Get` on the already verified connection. It is read-only and does not restart the macro runtime.
+
 Credentials remain in the browser session. The observed device serial is used only for comparison and is not displayed or logged.
+
+### Hardware prerequisites
+
+- a Cisco codec or collaboration device whose RoomOS release supports the InputDevice Joystick APIs;
+- a Thrustmaster T.16000M USB joystick;
+- Cisco certified cameras for joystick pan, tilt, and zoom control.
+
+USB and uncertified cameras may still be visible and switched as video sources, but this solution does not provide joystick PTZ for them. Additional integration or macro development is required.
+
+Resources:
+
+- [Thrustmaster T.16000M documentation](https://support.thrustmaster.com/en/product/t16000mfcs-en/)
+- [T.16000M InputDevice class](https://github.com/ctg-tme/Thrustmaster_16000M-InputDevice-Class)
 
 To run locally:
 
@@ -67,6 +85,8 @@ The editable `config` block is near the top of the macro and is bounded by `JOYS
 - a built-in action from the manifest below;
 - a generated camera-selection action from `config.cameras`;
 
+`config.documentation.ProjectName` and `RoomName` preserve the printable identity when the macro is uploaded or fetched back into the configurator. They do not affect RoomOS runtime behavior.
+
 `config.controls` is keyed by the physical guide button number, so its public interface stays ordered from `1` through `16`. All 16 buttons must appear, including unused buttons:
 
 ```js
@@ -81,12 +101,12 @@ controls: {
   8: '',
   9: 'SelfviewOff',
   10: 'ControlPreview',
-  11: 'SelectRvptzLeft',
-  12: 'SelectQuadCamera',
+  11: 'SelectCamera2',
+  12: 'SelectCamera1',
   13: '',
   14: '',
-  15: 'SelectRvptzRight',
-  16: 'SelectUsbCamera'
+  15: 'SelectCamera3',
+  16: 'SelectCamera4'
 }
 ```
 
@@ -110,9 +130,13 @@ Use `''`, `null`, or `undefined` when a listed button should perform no action. 
 `config.cameras` is an array of one to four definitions:
 
 ```js
+documentation: {
+  ProjectName: 'Joystick Camera Control',
+  RoomName: 'Room 1'
+},
 joystick: {
   StartingHand: 'right',
-  DefaultCameraAction: 'SelectQuadCamera',
+  DefaultCameraAction: 'SelectCamera1',
   Camera: {
     BaseRampSpeed: 12,
     SlowModeDivisor: 2
@@ -120,16 +144,16 @@ joystick: {
 },
 cameras: [
   {
-    ButtonAction: 'SelectQuadCamera',
-    Name: 'Quad Camera',
+    ButtonAction: 'SelectCamera1',
+    Name: 'Camera 1',
     ConnectorId: '1',
     ControlId: '1'
   },
   {
-    ButtonAction: 'SelectRvptzLeft',
-    Name: 'RVPTZ Left',
-    ConnectorId: '8',
-    ControlId: '8'
+    ButtonAction: 'SelectCamera2',
+    Name: 'Camera 2',
+    ConnectorId: '2',
+    ControlId: '2'
   }
 ]
 ```
@@ -154,12 +178,12 @@ The guide button number is the configuration key and remains stable. The macro r
 | 8 | Left base lower button | `''` |
 | 9 | Left base lower middle button | `SelfviewOff` |
 | 10 | Left base inner button | `ControlPreview` |
-| 11 | Right base top button | `SelectRvptzLeft` |
-| 12 | Right base upper middle button | `SelectQuadCamera` |
+| 11 | Right base top button | `SelectCamera2` |
+| 12 | Right base upper middle button | `SelectCamera1` |
 | 13 | Right base inner top button | `''` |
 | 14 | Right base inner lower button | `''` |
-| 15 | Right base lower middle button | `SelectRvptzRight` |
-| 16 | Right base lower button | `SelectUsbCamera` |
+| 15 | Right base lower middle button | `SelectCamera3` |
+| 16 | Right base lower button | `SelectCamera4` |
 
 The three analog axes are intentionally fixed and are not button actions:
 

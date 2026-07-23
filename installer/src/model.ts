@@ -25,7 +25,8 @@ export interface CameraDefinition {
 }
 
 export interface ConfiguratorState {
-  documentTitle: string;
+  projectName: string;
+  roomName: string;
   handedness: Handedness;
   previewOutput: number;
   baseRampSpeed: number;
@@ -146,39 +147,46 @@ export function cameraButtonActions(cameras: CameraDefinition[]): Map<string, st
   return actions;
 }
 
+export const DEFAULT_ASSIGNMENTS: Readonly<Record<number, string>> = {
+  1: builtInAssignment('PrecisionMode'),
+  2: builtInAssignment(''),
+  3: builtInAssignment('SwapMainPreview'),
+  4: builtInAssignment('SwapMainPreview'),
+  5: builtInAssignment('ControlMain'),
+  6: builtInAssignment('SelfviewWindowed'),
+  7: builtInAssignment('SelfviewFullscreen'),
+  8: builtInAssignment(''),
+  9: builtInAssignment('SelfviewOff'),
+  10: builtInAssignment('ControlPreview'),
+  11: cameraAssignment('camera-2'),
+  12: cameraAssignment('camera-1'),
+  13: builtInAssignment(''),
+  14: builtInAssignment(''),
+  15: cameraAssignment('camera-3'),
+  16: cameraAssignment('camera-4'),
+};
+
+export function createDefaultAssignments(): Record<number, string> {
+  return { ...DEFAULT_ASSIGNMENTS };
+}
+
 export function createDefaultState(): ConfiguratorState {
   const cameras: CameraDefinition[] = [
-    { id: 'camera-1', Name: 'Quad Camera', ConnectorId: '1', ControlId: '1' },
-    { id: 'camera-2', Name: 'RVPTZ Left', ConnectorId: '8', ControlId: '8' },
-    { id: 'camera-3', Name: 'RVPTZ Right', ConnectorId: '9', ControlId: '9' },
-    { id: 'camera-4', Name: 'USB Camera', ConnectorId: '7', ControlId: '7' },
+    { id: 'camera-1', Name: 'Camera 1', ConnectorId: '1', ControlId: '1' },
+    { id: 'camera-2', Name: 'Camera 2', ConnectorId: '2', ControlId: '2' },
+    { id: 'camera-3', Name: 'Camera 3', ConnectorId: '3', ControlId: '3' },
+    { id: 'camera-4', Name: 'Camera 4', ConnectorId: '4', ControlId: '4' },
   ];
 
   return {
-    documentTitle: 'Joystick Camera Control',
+    projectName: 'Joystick Camera Control',
+    roomName: 'Room 1',
     handedness: 'right',
     previewOutput: 2,
     baseRampSpeed: 12,
     slowModeDivisor: 2,
     cameras,
     defaultCameraId: 'camera-1',
-    assignments: {
-      1: builtInAssignment('PrecisionMode'),
-      2: builtInAssignment(''),
-      3: builtInAssignment('SwapMainPreview'),
-      4: builtInAssignment('SwapMainPreview'),
-      5: builtInAssignment('ControlMain'),
-      6: builtInAssignment('SelfviewWindowed'),
-      7: builtInAssignment('SelfviewFullscreen'),
-      8: builtInAssignment(''),
-      9: builtInAssignment('SelfviewOff'),
-      10: builtInAssignment('ControlPreview'),
-      11: cameraAssignment('camera-2'),
-      12: cameraAssignment('camera-1'),
-      13: builtInAssignment(''),
-      14: builtInAssignment(''),
-      15: cameraAssignment('camera-3'),
-      16: cameraAssignment('camera-4'),
-    },
+    assignments: createDefaultAssignments(),
   };
 }

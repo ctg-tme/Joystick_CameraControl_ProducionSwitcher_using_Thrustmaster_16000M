@@ -1,7 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
-import { installAndVerify, type DeviceXapi } from './device';
+import { fetchMacroSource, installAndVerify, type DeviceXapi } from './device';
 
 describe('device installation', () => {
+  it('reads an installed macro through the verified device socket', async () => {
+    const command = vi.fn(async () => ({
+      Macro: {
+        Name: 'Joystick_CameraControl_ProductionSwitcher',
+        Content: '/* JOYSTICK_CONFIG_START */ source /* JOYSTICK_CONFIG_END */',
+      },
+    }));
+    const xapi = { command } as unknown as DeviceXapi;
+
+    const source = await fetchMacroSource(xapi, 'Joystick_CameraControl_ProductionSwitcher');
+
+    expect(source).toContain('JOYSTICK_CONFIG_START');
+    expect(command).toHaveBeenCalledWith('Macros Macro Get', {
+      Name: 'Joystick_CameraControl_ProductionSwitcher',
+      Content: 'True',
+    });
+  });
+
   it('saves the dependency before the configured macro, activates, restarts, and observes readiness', async () => {
     let feedback: ((event: unknown) => void) | undefined;
     const stopFeedback = vi.fn();

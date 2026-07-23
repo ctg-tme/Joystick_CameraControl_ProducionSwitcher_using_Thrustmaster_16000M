@@ -29,7 +29,7 @@ A named operator function assigned to a logical joystick button. Built-in action
 _Avoid_: Map ID, mapped ID
 
 **Camera Button Action**:
-A generated, readable action such as `SelectQuadCamera` that connects one camera definition to exactly one button without coupling the camera to a fixed physical position.
+A generated, readable action such as `SelectCamera1` that connects one camera definition to exactly one button without coupling the camera to a fixed physical position.
 _Avoid_: Camera map ID, camera index, camera button ID
 
 **No Action**:

@@ -107,6 +107,42 @@ export async function verifyConnectedDevice(
   };
 }
 
+function macroContentFromResponse(value: unknown, expectedName: string): string | undefined {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const content = macroContentFromResponse(entry, expectedName);
+      if (content !== undefined) return content;
+    }
+    return undefined;
+  }
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.Content === 'string' &&
+    (record.Name === undefined || record.Name === expectedName)
+  ) {
+    return record.Content;
+  }
+  for (const child of Object.values(record)) {
+    const content = macroContentFromResponse(child, expectedName);
+    if (content !== undefined) return content;
+  }
+  return undefined;
+}
+
+export async function fetchMacroSource(xapi: DeviceXapi, macroName: string): Promise<string> {
+  const result = await xapi.command('Macros Macro Get', { Name: macroName, Content: 'True' });
+  const content = macroContentFromResponse(result, macroName);
+  if (content === undefined) {
+    throw new Error(`RoomOS did not return source for ${macroName}. Confirm that the macro is installed.`);
+  }
+  if (content.length > 1024 * 1024) {
+    throw new Error('The device macro is too large to import.');
+  }
+  return content;
+}
+
 function eventText(event: unknown): string {
   return typeof event === 'string' ? event : JSON.stringify(event);
 }

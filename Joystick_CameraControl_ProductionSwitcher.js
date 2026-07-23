@@ -19,7 +19,7 @@ or implied.
  *
  * Date Created:            July 22, 2026
  * Revised:                 July 23, 2026
- * Version:                 1.5.0
+ * Version:                 1.6.0
  *
  * Description:             Standalone Thrustmaster T.16000M camera controller
  *                          and Main/Preview production switcher for RoomOS.
@@ -42,12 +42,16 @@ import { ThrustMaster16000M_JoyStick } from './Thrustmaster_16000M-Class';
 
 /* JOYSTICK_CONFIG_START */
 const config = {
+  documentation: {
+    ProjectName: 'Joystick Camera Control',
+    RoomName: 'Room 1'
+  },
   displays: {
     right: 2
   },
   joystick: {
     StartingHand: 'right',
-    DefaultCameraAction: 'SelectQuadCamera',
+    DefaultCameraAction: 'SelectCamera1',
     Camera: {
       BaseRampSpeed: 12,
       SlowModeDivisor: 2
@@ -68,39 +72,39 @@ const config = {
     8: '',
     9: 'SelfviewOff',
     10: 'ControlPreview',
-    11: 'SelectRvptzLeft',
-    12: 'SelectQuadCamera',
+    11: 'SelectCamera2',
+    12: 'SelectCamera1',
     13: '',
     14: '',
-    15: 'SelectRvptzRight',
-    16: 'SelectUsbCamera'
+    15: 'SelectCamera3',
+    16: 'SelectCamera4'
   },
   // Configure one to four cameras. Each ButtonAction must appear exactly once in
   // controls so every camera has one button binding.
   cameras: [
     {
-      ButtonAction: 'SelectQuadCamera',
-      Name: 'Quad Camera',
+      ButtonAction: 'SelectCamera1',
+      Name: 'Camera 1',
       ConnectorId: '1',
       ControlId: '1'
     },
     {
-      ButtonAction: 'SelectRvptzLeft',
-      Name: 'RVPTZ Left',
-      ConnectorId: '8',
-      ControlId: '8'
+      ButtonAction: 'SelectCamera2',
+      Name: 'Camera 2',
+      ConnectorId: '2',
+      ControlId: '2'
     },
     {
-      ButtonAction: 'SelectRvptzRight',
-      Name: 'RVPTZ Right',
-      ConnectorId: '9',
-      ControlId: '9'
+      ButtonAction: 'SelectCamera3',
+      Name: 'Camera 3',
+      ConnectorId: '3',
+      ControlId: '3'
     },
     {
-      ButtonAction: 'SelectUsbCamera',
-      Name: 'USB Camera',
-      ConnectorId: '7',
-      ControlId: '7'
+      ButtonAction: 'SelectCamera4',
+      Name: 'Camera 4',
+      ConnectorId: '4',
+      ControlId: '4'
     }
   ]
 };

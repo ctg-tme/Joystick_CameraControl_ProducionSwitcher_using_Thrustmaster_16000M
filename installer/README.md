@@ -3,8 +3,8 @@
 This Vite application has three jobs:
 
 1. configure one to four cameras and all 16 physical buttons;
-2. generate or directly install a configured RoomOS macro;
-3. print the same configuration as operator documentation.
+2. recover, generate, or directly install a configured RoomOS macro;
+3. print the same configuration as color, single-page operator documentation.
 
 ## Local development
 
@@ -40,6 +40,8 @@ Before installation, the page:
 - requires an expected device serial number and compares it without displaying the observed serial;
 - blocks installation when the device reports an active call;
 - requires acknowledgement that the macro runtime restart affects every active macro.
+
+After the same verification, the operator may fetch the installed solution macro with a read-only `Macros Macro Get` command. Local uploads and fetched macros are parsed as data without executing their source.
 
 The install sequence is:
 
