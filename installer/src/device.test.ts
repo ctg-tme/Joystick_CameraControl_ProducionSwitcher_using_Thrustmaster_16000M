@@ -1,5 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fetchMacroSource, installAndVerify, type DeviceXapi } from './device';
+import { createDeviceInstallationSession, type DeviceXapi, type VerifiedDevice } from './device';
+
+const verifiedDevice: VerifiedDevice = {
+  productPlatform: 'Room Kit Pro',
+  roomOsVersion: 'RoomOS 26.3',
+  serialMatches: true,
+  activeCalls: 0,
+};
+
+const credentials = {
+  host: 'room.example.com',
+  username: 'admin',
+  password: 'secret',
+};
 
 describe('device installation', () => {
   it('reads an installed macro through the verified device socket', async () => {
@@ -9,9 +22,14 @@ describe('device installation', () => {
         Content: '/* JOYSTICK_CONFIG_START */ source /* JOYSTICK_CONFIG_END */',
       },
     }));
-    const xapi = { command } as unknown as DeviceXapi;
+    const xapi = { command, close: vi.fn() } as unknown as DeviceXapi;
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify: vi.fn(async () => verifiedDevice),
+    });
+    await session.connect(credentials, 'SERIAL-1');
 
-    const source = await fetchMacroSource(xapi, 'Joystick_CameraControl_ProductionSwitcher');
+    const source = await session.fetchInstalledMacro('Joystick_CameraControl_ProductionSwitcher');
 
     expect(source).toContain('JOYSTICK_CONFIG_START');
     expect(command).toHaveBeenCalledWith('Macros Macro Get', {
@@ -43,8 +61,13 @@ describe('device installation', () => {
     } as unknown as DeviceXapi;
     const progress: string[] = [];
 
-    const result = await installAndVerify(
-      xapi,
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify: vi.fn(async () => verifiedDevice),
+    });
+    await session.connect(credentials, 'SERIAL-1');
+
+    const result = await session.install(
       {
         dependencyName: 'Thrustmaster_16000M-Class',
         dependencySource: 'dependency source',
@@ -52,7 +75,6 @@ describe('device installation', () => {
         macroSource: 'configured macro source',
       },
       (message) => progress.push(message),
-      100,
     );
 
     expect(result.kind).toBe('ready');
@@ -70,5 +92,30 @@ describe('device installation', () => {
     expect(command.mock.calls[3][1]).toMatchObject({ Name: 'Joystick_CameraControl_ProductionSwitcher' });
     expect(progress.at(-1)).toContain('Waiting');
     expect(stopFeedback).toHaveBeenCalledOnce();
+    expect(session.snapshot().installationResult).toEqual(result);
+  });
+
+  it('rechecks calls inside the session immediately before installation', async () => {
+    const xapi = { close: vi.fn() } as unknown as DeviceXapi;
+    const verify = vi.fn()
+      .mockResolvedValueOnce(verifiedDevice)
+      .mockResolvedValueOnce({ ...verifiedDevice, activeCalls: 1 });
+    const install = vi.fn();
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify,
+      install,
+    });
+    await session.connect(credentials, 'SERIAL-1');
+
+    await expect(session.install({
+      dependencyName: 'dependency',
+      dependencySource: 'source',
+      macroName: 'macro',
+      macroSource: 'source',
+    }, vi.fn())).rejects.toThrow('A call started after the confirmation prompt. Installation remains blocked.');
+
+    expect(verify).toHaveBeenCalledTimes(2);
+    expect(install).not.toHaveBeenCalled();
   });
 });

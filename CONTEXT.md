@@ -20,7 +20,7 @@ The camera whose pan, tilt, and zoom respond to joystick movement; it is associa
 _Avoid_: Selected camera, active camera
 
 **Swap**:
-An exchange of the Main and Preview camera sources without changing which physical camera is currently controlled.
+An exchange of the Main and Preview camera sources without changing which physical camera is currently controlled. The Control Method changes to the controlled camera's new role: Preview becomes Live, or Live becomes Preview.
 _Avoid_: Cut, take
 
 **Precision Mode**:

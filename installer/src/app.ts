@@ -6,19 +6,15 @@ import {
   validateConfiguratorState,
 } from './config';
 import {
-  connectToDevice,
-  fetchMacroSource,
-  installAndVerify,
+  createDeviceInstallationSession,
   normalizeDeviceHost,
-  verifyConnectedDevice,
   type DeviceCredentials,
-  type DeviceXapi,
-  type InitializationResult,
-  type VerifiedDevice,
+  type DeviceInstallationSession,
 } from './device';
 import {
   BUILT_IN_ACTIONS,
   DEFAULT_ASSIGNMENTS,
+  PANEL_LOCATIONS,
   PHYSICAL_BUTTONS,
   assignmentActionId,
   assignmentCameraId,
@@ -33,14 +29,21 @@ import {
   type CameraDefinition,
   type ConfiguratorState,
 } from './model';
+import { generateConfiguredUserManual, renderConfiguredPrintSheet } from './manual';
 import { loadDependencySource, loadInstallerSources, type InstallerSources } from './source';
+import {
+  WORKFLOW_STEPS,
+  createWorkflowNavigation,
+  type WorkflowNavigation,
+  type WorkflowStep,
+} from './workflow';
 
 const UNUSED_ASSIGNMENT = builtInAssignment('');
 const DEFAULT_CAMERA_BUTTONS = [12, 11, 15, 16] as const;
 const CLASS_REPOSITORY_URL = 'https://github.com/ctg-tme/Thrustmaster_16000M-InputDevice-Class';
 const JOYSTICK_DOCUMENTATION_URL = 'https://support.thrustmaster.com/en/product/t16000mfcs-en/';
+const JOYSTICK_MODEL = 'Thrustmaster T.16000M';
 const CISCO_SAMPLE_CODE_LICENSE_URL = 'https://developer.cisco.com/docs/licenses/';
-const USER_MANUAL_FILE_NAME = 'Joystick_CameraControl_User_Manual.html';
 const THEME_STORAGE_KEY = 'joystick-configurator-theme';
 const DEVICE_IDENTITY_STORAGE_KEY = 'joystick-configurator-device-identity';
 
@@ -58,6 +61,14 @@ const CONFIGURATION_DEFINITIONS = {
   handedness: {
     label: 'Physical handedness switch',
     description: 'Updates the macro to match the handedness switch on the bottom of the joystick. If they do not match, the base-button references swap sides.',
+  },
+  setDefaultCamera: {
+    label: 'Set default camera',
+    description: 'Controls whether enabling Joystick Controls sets Main to the configured default camera. Disable it when the operator will choose the Main source manually.',
+  },
+  panelLocation: {
+    label: 'Joystick Controls location',
+    description: 'Controls where the Joystick Controls UI is available on the RoomOS device. HomeScreenAndCallControls makes it available both outside and during calls.',
   },
   previewMode: {
     label: 'Preview display mode',
@@ -93,29 +104,15 @@ const CONFIGURATION_DEFINITIONS = {
   },
   defaultCamera: {
     label: 'Default camera',
-    description: 'The configured camera selected for Main, Preview, and joystick control when the macro starts.',
+    description: 'The camera used for the macro\'s default Main, Preview, and joystick-control assignments. Set default camera determines whether enabling Joystick Controls applies it to Main.',
   },
 } as const;
 
 type ConfigurationDefinitionKey = keyof typeof CONFIGURATION_DEFINITIONS;
 
-const WORKFLOW_STEPS = [
-  { id: 'introduction', title: 'Introduction', description: 'Solution overview and hardware' },
-  { id: 'macro-settings', title: 'Macro Settings', description: 'Room, behavior, and camera sources' },
-  { id: 'button-assignments', title: 'Button Assignments', description: 'Joystick controls and action key' },
-  { id: 'review-installation', title: 'Review and Installation', description: 'Review, download, or install' },
-] as const;
-
-type WorkflowStep = 1 | 2 | 3 | 4;
 type ThemePreference = 'system' | 'light' | 'dark';
-
-function workflowStepFromHash(hash: string): WorkflowStep {
-  const index = WORKFLOW_STEPS.findIndex((step) => `#${step.id}` === hash);
-  if (hash === '#configure' || hash === '#cameras' || hash === '#solution-settings' || hash === '#camera-sources') return 2;
-  if (hash === '#button-map' || hash === '#manifest') return 3;
-  if (hash === '#output' || hash === '#install') return 4;
-  return (index >= 0 ? index + 1 : 1) as WorkflowStep;
-}
+type InstallationMode = 'install' | 'update';
+type PendingDeviceAction = 'install' | 'fetch-macro';
 
 function storedThemePreference(): ThemePreference {
   try {
@@ -157,9 +154,9 @@ function integerOptions(minimum: number, maximum: number, selected: number): str
     .join('');
 }
 
-function downloadText(fileName: string, content: string): void {
+function downloadText(fileName: string, content: string, type = 'text/javascript;charset=utf-8'): void {
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(new Blob([content], { type: 'text/javascript;charset=utf-8' }));
+  link.href = URL.createObjectURL(new Blob([content], { type }));
   link.download = fileName;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
@@ -174,17 +171,15 @@ interface AssignmentInfo {
 
 export class ConfiguratorApp {
   private state: ConfiguratorState = createDefaultState();
-  private currentStep: WorkflowStep = 1;
-  private hasWorkflowProgress = false;
   private themePreference: ThemePreference = storedThemePreference();
   private readonly systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
   private sources?: InstallerSources;
   private sourceError = '';
-  private device?: DeviceXapi;
   private credentials: DeviceCredentials = storedDeviceCredentials();
   private expectedSerial = '';
-  private verifiedDevice?: VerifiedDevice;
-  private pendingDeviceMacroFetch = false;
+  private installationMode: InstallationMode = 'install';
+  private installationProgressMode: InstallationMode = 'install';
+  private pendingDeviceAction?: PendingDeviceAction;
   private deviceConnectionOpen = false;
   private installConfirmationOpen = false;
   private installationProgressOpen = false;
@@ -194,27 +189,21 @@ export class ConfiguratorApp {
   private errorMessage = '';
   private configurationMessage = '';
   private configurationError = '';
-  private installResult?: InitializationResult;
 
-  constructor(private readonly root: HTMLElement) {}
+  constructor(
+    private readonly root: HTMLElement,
+    private readonly deviceSession: DeviceInstallationSession = createDeviceInstallationSession(),
+    private readonly workflow: WorkflowNavigation = createWorkflowNavigation(),
+  ) {}
 
   async initialize(): Promise<void> {
     this.applyTheme();
-    const initialHash = `#${WORKFLOW_STEPS[0].id}`;
-    window.history.replaceState({ step: 1 }, '', initialHash);
-    window.addEventListener('popstate', () => {
-      const step = workflowStepFromHash(window.location.hash);
-      if (step === this.currentStep) return;
-      this.currentStep = step;
-      if (step > 1) this.hasWorkflowProgress = true;
-      this.render();
-      window.scrollTo({ top: 0 });
-    });
-    window.addEventListener('beforeunload', (event) => {
-      this.captureDeviceFields();
-      if (!this.hasWorkflowProgress) return;
-      event.preventDefault();
-      event.returnValue = 'Refreshing restarts the installer from the Introduction page.';
+    this.workflow.initialize({
+      onPopState: () => {
+        this.render();
+        window.scrollTo({ top: 0 });
+      },
+      beforeUnload: () => this.captureDeviceFields(),
     });
     this.systemTheme.addEventListener('change', () => {
       if (this.themePreference === 'system') this.applyTheme();
@@ -248,11 +237,7 @@ export class ConfiguratorApp {
   }
 
   private navigateToStep(step: WorkflowStep, pushHistory = true): void {
-    if (step === this.currentStep) return;
-    this.currentStep = step;
-    if (step > 1) this.hasWorkflowProgress = true;
-    const hash = `#${WORKFLOW_STEPS[step - 1].id}`;
-    if (pushHistory) window.history.pushState({ step }, '', hash);
+    if (!this.workflow.navigate(step, pushHistory)) return;
     this.render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     window.setTimeout(() => this.root.querySelector<HTMLElement>('.workflow-page')?.focus(), 0);
@@ -346,18 +331,6 @@ export class ConfiguratorApp {
       <optgroup label="Configured cameras">${cameraOptions}</optgroup>`;
   }
 
-  private assignedButtons(actionId: string): number[] {
-    const target = builtInAssignment(actionId);
-    return PHYSICAL_BUTTONS
-      .filter((button) => this.state.assignments[button.number] === target)
-      .map((button) => button.number);
-  }
-
-  private buttonChips(numbers: number[], category: ActionCategory): string {
-    if (!numbers.length) return '<span class="chip unused">Not assigned</span>';
-    return numbers.map((number) => `<span class="chip ${category}">${number}</span>`).join('');
-  }
-
   private renderWorkflowRail(): string {
     return `
       <aside class="workflow-rail no-print" aria-label="Configuration progress">
@@ -370,7 +343,7 @@ export class ConfiguratorApp {
           <ol class="workflow-step-list">
             ${WORKFLOW_STEPS.map((step, index) => {
               const number = (index + 1) as WorkflowStep;
-              const current = number === this.currentStep;
+              const current = number === this.workflow.currentStep;
               return `
                 <li>
                   <button class="workflow-step${current ? ' current' : ''}" type="button" data-workflow-step="${number}" ${current ? 'aria-current="step"' : ''}>
@@ -385,12 +358,13 @@ export class ConfiguratorApp {
   }
 
   private renderWorkflowActions(): string {
-    if (this.currentStep === 1) return '';
-    const previous = this.currentStep > 1 ? (this.currentStep - 1) as WorkflowStep : undefined;
-    const next = this.currentStep < WORKFLOW_STEPS.length ? (this.currentStep + 1) as WorkflowStep : undefined;
+    const currentStep = this.workflow.currentStep;
+    if (currentStep === 1) return '';
+    const previous = currentStep > 1 ? (currentStep - 1) as WorkflowStep : undefined;
+    const next = currentStep < WORKFLOW_STEPS.length ? (currentStep + 1) as WorkflowStep : undefined;
     return `
       <footer class="workflow-actions no-print">
-        <span>Page ${this.currentStep} of ${WORKFLOW_STEPS.length}</span>
+        <span>Page ${currentStep} of ${WORKFLOW_STEPS.length}</span>
         <div>
           ${previous ? `<button class="button secondary" type="button" data-workflow-step="${previous}">Back</button>` : ''}
           ${next ? `<button class="button primary" type="button" data-workflow-step="${next}">Continue to ${WORKFLOW_STEPS[next - 1].title}</button>` : ''}
@@ -400,10 +374,12 @@ export class ConfiguratorApp {
 
   private renderReviewActions(): string {
     const configurationIsValid = validateConfiguratorState(this.state).length === 0;
-    const deviceAction = this.device ? 'Update Macro' : 'Install Macro';
-    const deviceDescription = this.device
-      ? `Update the macro on the verified ${escapeHtml(this.verifiedDevice?.productPlatform ?? 'RoomOS device')}.`
-      : 'Connect directly to the target RoomOS device, verify it, and install the solution.';
+    const session = this.deviceSession.snapshot();
+    const isUpdate = this.installationMode === 'update';
+    const deviceAction = isUpdate ? 'Update Macro' : 'Install Macro';
+    const deviceDescription = session.connected
+      ? `${isUpdate ? 'Update' : 'Install'} the macro on the verified ${escapeHtml(session.verifiedDevice?.productPlatform ?? 'RoomOS device')}.`
+      : `Connect directly to the target RoomOS device, verify it, and ${isUpdate ? 'update' : 'install'} the solution.`;
     return `
       <section class="review-action-grid" aria-label="Installation and download options">
         <article class="review-action primary-action">
@@ -414,7 +390,7 @@ export class ConfiguratorApp {
         <article class="review-action">
           <span class="review-action-number">2</span>
           <div><h2>${deviceAction}</h2><p>${deviceDescription}</p></div>
-          <button class="button secondary" ${this.device ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${configurationIsValid ? '' : 'disabled'}>${deviceAction}</button>
+          <button class="button secondary" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${configurationIsValid ? '' : 'disabled'}>${deviceAction}</button>
         </article>
         <article class="review-action">
           <span class="review-action-number">3</span>
@@ -425,9 +401,9 @@ export class ConfiguratorApp {
   }
 
   private renderCurrentPage(): string {
-    if (this.currentStep === 1) return this.renderHeader();
-    if (this.currentStep === 2) return this.renderSettings();
-    if (this.currentStep === 3) return `<div class="button-assignment-page">${this.renderButtonMap()}</div>`;
+    if (this.workflow.currentStep === 1) return this.renderHeader();
+    if (this.workflow.currentStep === 2) return this.renderSettings();
+    if (this.workflow.currentStep === 3) return `<div class="button-assignment-page">${this.renderButtonMap()}</div>`;
     return `
       <div class="review-page">
         <header class="page-intro">
@@ -442,6 +418,7 @@ export class ConfiguratorApp {
   }
 
   private renderHeader(): string {
+    const connected = this.deviceSession.snapshot().connected;
     return `
       <header class="hero">
         <div class="hero-copy">
@@ -460,7 +437,7 @@ export class ConfiguratorApp {
               </label>
             </article>
             <article>
-              <div><strong>Fetch Macro from Device</strong><p>${this.device ? 'Read the installed macro from the verified device.' : 'Connect to a device, verify it, and read its installed macro.'}</p></div>
+              <div><strong>Fetch Macro from Device</strong><p>${connected ? 'Read the installed macro from the verified device.' : 'Connect to a device, verify it, and read its installed macro.'}</p></div>
               <button class="button secondary" id="begin-device-macro-fetch" type="button" ${this.sources && !this.busy ? '' : 'disabled'}>Fetch Macro from Device</button>
             </article>
           </div>
@@ -509,6 +486,18 @@ export class ConfiguratorApp {
             <select data-setting="handedness">
               <option value="right" ${this.state.handedness === 'right' ? 'selected' : ''}>Right-handed</option>
               <option value="left" ${this.state.handedness === 'left' ? 'selected' : ''}>Left-handed</option>
+            </select>
+          </label>
+          <label class="field">${this.renderConfigurationLabel('setDefaultCamera')}
+            <select data-setting="setDefaultCamera">
+              <option value="true" ${this.state.setDefaultCamera ? 'selected' : ''}>Enabled</option>
+              <option value="false" ${!this.state.setDefaultCamera ? 'selected' : ''}>Disabled</option>
+            </select>
+            <small>Disabled leaves the current Main source unchanged when Joystick Controls is enabled.</small>
+          </label>
+          <label class="field">${this.renderConfigurationLabel('panelLocation')}
+            <select data-setting="panelLocation">
+              ${PANEL_LOCATIONS.map((location) => `<option value="${location}" ${this.state.panelLocation === location ? 'selected' : ''}>${location}</option>`).join('')}
             </select>
           </label>
           <label class="field">${this.renderConfigurationLabel('previewMode')}
@@ -627,7 +616,7 @@ export class ConfiguratorApp {
               const isDefault = assignment === this.defaultAssignments()[button.number];
               const previewActionIsUnavailable = this.state.previewMode === 'Off' && isPreviewDependentAssignment(assignment);
               const previewWarningMessage = assignmentActionId(assignment) === 'ControlPreview'
-                ? 'The joystick will control the Main camera instead.'
+                ? 'This Control Preview action will be ignored while Preview Display mode is Off.'
                 : 'This button action will be ignored.';
               const previewWarningTooltipId = `preview-warning-help-${button.number}`;
               return `
@@ -687,7 +676,7 @@ export class ConfiguratorApp {
       <dialog class="about-dialog no-print" id="about-dialog" aria-labelledby="about-title" aria-describedby="about-summary">
         <div class="about-shell">
           <header>
-            <div><span class="section-kicker">About</span><h2 id="about-title">Joystick Camera Control</h2></div>
+            <div><span class="section-kicker">About</span><h2 id="about-title">Joystick Camera Control</h2><p class="about-product-model">${JOYSTICK_MODEL}</p></div>
             <form method="dialog"><button class="icon-button" type="submit" aria-label="Close About dialog">×</button></form>
           </header>
           <div class="about-content">
@@ -730,12 +719,16 @@ export class ConfiguratorApp {
   }
 
   private renderInstaller(): string {
-    const isUpdate = Boolean(this.device);
+    const session = this.deviceSession.snapshot();
+    const verifiedDevice = session.verifiedDevice;
+    const installResult = session.installationResult;
+    const isUpdate = this.installationMode === 'update';
     const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
+    const operation = isUpdate ? 'update' : 'installation';
     const configurationIsValid = validateConfiguratorState(this.state).length === 0;
     const canPromptInstall = Boolean(
-      this.device &&
-      this.verifiedDevice?.serialMatches &&
+      session.connected &&
+      verifiedDevice?.serialMatches &&
       this.sources &&
       configurationIsValid &&
       !this.busy,
@@ -744,7 +737,7 @@ export class ConfiguratorApp {
       <section class="panel section no-print installer-section" id="install">
         <div class="section-heading">
           <div><span class="section-kicker">Direct installation</span><h2>${isUpdate ? 'Update macro on RoomOS' : 'Install macro on RoomOS'}</h2></div>
-          <p>${isUpdate ? 'The verified device is ready for a reviewed update.' : 'Connect in a secure modal without leaving this page, then review the installation before making changes.'}</p>
+          <p>${session.connected ? `The verified device is ready for a reviewed ${operation}.` : `Connect in a secure modal without leaving this page. The ${operation} begins immediately after verification.`}</p>
         </div>
         <div class="install-layout">
           <div class="install-plan-panel">
@@ -757,35 +750,38 @@ export class ConfiguratorApp {
           </div>
           <div class="install-review">
             <h3>Device status</h3>
-            ${this.verifiedDevice ? `
-              <div class="device-result ${this.verifiedDevice.serialMatches && this.verifiedDevice.activeCalls === 0 ? 'success' : 'error'}">
-                <strong>${this.verifiedDevice.serialMatches ? 'Serial confirmed' : 'Serial mismatch — installation blocked'}</strong>
-                <span>${escapeHtml(this.verifiedDevice.productPlatform)} · RoomOS ${escapeHtml(this.verifiedDevice.roomOsVersion)}</span>
-                <span>${this.verifiedDevice.activeCalls === 0 ? 'No active calls' : `${this.verifiedDevice.activeCalls} active call(s) — installation blocked`}</span>
+            ${verifiedDevice ? `
+              <div class="device-result ${verifiedDevice.serialMatches && verifiedDevice.activeCalls === 0 ? 'success' : 'error'}">
+                <strong>${verifiedDevice.serialMatches ? 'Serial confirmed' : 'Serial mismatch — installation blocked'}</strong>
+                <span>${escapeHtml(verifiedDevice.productPlatform)} · RoomOS ${escapeHtml(verifiedDevice.roomOsVersion)}</span>
+                <span>${verifiedDevice.activeCalls === 0 ? 'No active calls' : `${verifiedDevice.activeCalls} active call(s) — installation blocked`}</span>
               </div>` : '<div class="device-result neutral"><strong>Not connected</strong><span>Connect and verify the exact device in the secure modal.</span></div>'}
             <div class="install-buttons">
-              ${this.device ? '<button class="button secondary" id="disconnect-device" type="button">Disconnect</button>' : ''}
-              <button class="button primary install-button" ${this.device ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${this.device ? (canPromptInstall ? '' : 'disabled') : (configurationIsValid ? '' : 'disabled')}>${actionLabel}</button>
+              ${session.connected ? '<button class="button secondary" id="disconnect-device" type="button">Disconnect</button>' : ''}
+              <button class="button primary install-button" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${session.connected ? (canPromptInstall ? '' : 'disabled') : (configurationIsValid ? '' : 'disabled')}>${actionLabel}</button>
             </div>
           </div>
         </div>
         ${this.statusMessage ? `<div class="callout progress"><strong>Installation progress</strong><p>${escapeHtml(this.statusMessage)}</p></div>` : ''}
         ${this.errorMessage ? `<div class="callout error"><strong>Unable to continue</strong><p>${escapeHtml(this.errorMessage)}</p></div>` : ''}
-        ${this.installResult ? `<div class="callout ${this.installResult.kind === 'ready' ? 'success' : this.installResult.kind === 'failed' ? 'error' : 'warning'}"><strong>${this.installResult.kind === 'ready' ? 'Installation ready' : this.installResult.kind === 'failed' ? 'Initialization failed' : 'Initialization not confirmed'}</strong><p>${escapeHtml(this.installResult.message)}</p></div>` : ''}
+        ${installResult ? `<div class="callout ${installResult.kind === 'ready' ? 'success' : installResult.kind === 'failed' ? 'error' : 'warning'}"><strong>${installResult.kind === 'ready' ? 'Installation ready' : installResult.kind === 'failed' ? 'Initialization failed' : 'Initialization not confirmed'}</strong><p>${escapeHtml(installResult.message)}</p></div>` : ''}
       </section>`;
   }
 
   private renderDeviceConnectionModal(): string {
-    const isFetch = this.pendingDeviceMacroFetch;
+    const isFetch = this.pendingDeviceAction === 'fetch-macro';
+    const isUpdate = this.installationMode === 'update';
+    const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
+    const operation = isUpdate ? 'update' : 'install';
     return `
       <dialog class="device-connection-dialog no-print" id="device-connection-dialog" aria-labelledby="device-connection-title">
         <div class="confirm-dialog-shell device-connection-shell">
           <header>
-            <div><span class="section-kicker">Secure RoomOS connection</span><h2 id="device-connection-title">${isFetch ? 'Fetch Macro from Device' : 'Connect to Install Macro'}</h2></div>
+            <div><span class="section-kicker">Secure RoomOS connection</span><h2 id="device-connection-title">${isFetch ? 'Fetch Macro from Device' : `Connect to ${actionLabel}`}</h2></div>
             <button class="icon-button" type="button" data-close-device-connection aria-label="Close device connection dialog" ${this.busy ? 'disabled' : ''}>×</button>
           </header>
           <div class="confirm-dialog-content device-connection-content">
-            <p>${isFetch ? 'Verify the exact device, then read its installed solution macro without changing or restarting RoomOS.' : 'Verify the exact device without leaving this page. Installation remains a separate, confirmed action.'}</p>
+            <p>${isFetch ? 'Verify the exact device, then read its installed solution macro without changing or restarting RoomOS.' : `Verify the exact device, then immediately ${operation} the configured solution. This restarts every active macro on the device.`}</p>
             <div class="device-form">
               <label class="field wide"><span>Device address</span><input id="device-host" placeholder="room-device.example.com" value="${escapeHtml(this.credentials.host)}" ${this.busy ? 'disabled' : ''}></label>
               <label class="field"><span>Administrator username</span><input id="device-username" autocomplete="username" value="${escapeHtml(this.credentials.username)}" ${this.busy ? 'disabled' : ''}></label>
@@ -799,15 +795,16 @@ export class ConfiguratorApp {
           <footer>
             <button class="button secondary" id="trust-certificate" type="button" ${this.busy ? 'disabled' : ''}>Open certificate page</button>
             <button class="button secondary" type="button" data-close-device-connection ${this.busy ? 'disabled' : ''}>Cancel</button>
-            <button class="button primary" id="connect-device" type="button" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Connecting…' : 'Connect and verify'}</button>
+            <button class="button primary" id="connect-device" type="button" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Connecting…' : isFetch ? 'Connect, verify, and fetch' : `Connect, verify, and ${operation}`}</button>
           </footer>
         </div>
       </dialog>`;
   }
 
   private renderInstallConfirmationModal(): string {
-    const activeCalls = this.verifiedDevice?.activeCalls ?? 0;
-    const isUpdate = Boolean(this.device);
+    const session = this.deviceSession.snapshot();
+    const activeCalls = session.verifiedDevice?.activeCalls ?? 0;
+    const isUpdate = this.installationMode === 'update';
     const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
     return `
       <dialog class="install-confirm-dialog no-print" id="install-confirm-dialog" aria-labelledby="install-confirm-title">
@@ -833,13 +830,15 @@ export class ConfiguratorApp {
   }
 
   private renderInstallationProgressModal(): string {
-    const isUpdate = Boolean(this.device);
+    const session = this.deviceSession.snapshot();
+    const installResult = session.installationResult;
+    const isUpdate = this.installationProgressMode === 'update';
     const operationLabel = isUpdate ? 'Updating macro' : 'Installing macro';
-    const outcome = this.errorMessage || this.installResult?.kind === 'failed'
+    const outcome = this.errorMessage || installResult?.kind === 'failed'
       ? 'error'
-      : this.installResult?.kind === 'timeout'
+      : installResult?.kind === 'timeout'
         ? 'warning'
-        : this.installResult?.kind === 'ready'
+        : installResult?.kind === 'ready'
           ? 'success'
           : 'progress';
     const outcomeTitle = outcome === 'error'
@@ -850,7 +849,7 @@ export class ConfiguratorApp {
           ? 'Installation complete'
           : operationLabel;
     const outcomeMessage = this.errorMessage
-      || this.installResult?.message
+      || installResult?.message
       || this.statusMessage
       || 'Preparing the RoomOS installation.';
     return `
@@ -883,132 +882,15 @@ export class ConfiguratorApp {
       </dialog>`;
   }
 
-  private renderOperatorGuide(): string {
-    const precisionButtons = this.assignedButtons('PrecisionMode');
-    const swapButtons = this.assignedButtons('SwapMainPreview');
-    const mainButtons = this.assignedButtons('ControlMain');
-    const previewButtons = this.assignedButtons('ControlPreview');
-    const cameraActions = cameraButtonActions(this.state.cameras);
-    return `
-      <section class="operator-guide" id="operator-guide">
-        <div class="guide-header">
-          <span class="section-kicker">Printable operator documentation</span>
-          <h2 data-project-name-output>${escapeHtml(this.state.projectName || 'Joystick Camera Control')}</h2>
-          <p><strong data-room-name-output>${escapeHtml(this.state.roomName || 'Room')}</strong> · Thrustmaster T.16000M camera operation · ${this.state.handedness === 'right' ? 'Right' : 'Left'}-handed hardware switch</p>
-        </div>
-        <div class="workflow-grid">
-          <article><span>1</span><strong>Choose the target</strong><p>${this.buttonChips(mainButtons, 'main')} controls Main. ${this.buttonChips(previewButtons, 'preview')} controls Preview.</p></article>
-          <article><span>2</span><strong>Choose a camera</strong><p>${this.state.cameras.map((camera) => {
-            const numbers = PHYSICAL_BUTTONS.filter((button) => this.state.assignments[button.number] === cameraAssignment(camera.id)).map((button) => button.number);
-            return `${this.buttonChips(numbers, 'camera')} ${escapeHtml(camera.Name)}`;
-          }).join(' · ')}</p></article>
-          <article><span>3</span><strong>Frame the shot</strong><p>Main stick pitch tilts, stick twist pans, and mini pitch zooms.</p></article>
-          <article><span>4</span><strong>Refine and take live</strong><p>${this.buttonChips(precisionButtons, 'motion')} holds Precision mode. ${this.buttonChips(swapButtons, 'motion')} swaps Main and Preview.</p></article>
-        </div>
-        <div class="guide-tables">
-          <div class="table-wrap">
-            <h3>Button reference</h3>
-            <table>
-              <thead><tr><th>Button</th><th>Physical control</th><th>ButtonAction</th><th>What it does</th></tr></thead>
-              <tbody>
-                ${PHYSICAL_BUTTONS.map((button) => {
-                  const info = this.assignmentInfo(this.state.assignments[button.number]);
-                  return `<tr><td><span class="chip ${info.category}">${button.number}</span></td><td>${escapeHtml(button.label)}<code>${escapeHtml(logicalButtonId(button, this.state.handedness))}</code></td><td>${escapeHtml(info.label)}<code>${escapeHtml(info.code)}</code></td><td>${escapeHtml(info.description)}</td></tr>`;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-          <div class="table-wrap camera-reference">
-            <h3>Camera reference</h3>
-            <table>
-              <thead><tr><th>Camera</th><th>Button</th><th>ButtonAction</th><th>Video / control</th></tr></thead>
-              <tbody>
-                ${this.state.cameras.map((camera) => {
-                  const button = PHYSICAL_BUTTONS.find((candidate) => this.state.assignments[candidate.number] === cameraAssignment(camera.id));
-                  return `<tr><td>${escapeHtml(camera.Name)}</td><td>${button ? `<span class="chip camera">${button.number}</span>` : 'Not assigned'}</td><td><code>${escapeHtml(cameraActions.get(camera.id) ?? '')}</code></td><td>Connector ${escapeHtml(camera.ConnectorId)} · Camera ${escapeHtml(camera.ControlId)}</td></tr>`;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="guide-note"><strong>Operating habit</strong><p>Prepare the next camera in Preview, frame it with the joystick, then use Swap Main and Preview to take it live. Use Control Main only when the live shot needs an immediate correction.</p></div>
-      </section>`;
-  }
-
-  private renderPrintSheet(): string {
-    const cameraActions = cameraButtonActions(this.state.cameras);
-    const targetActions = [
-      ['ControlMain', 'Control Main'],
-      ['ControlPreview', 'Control Preview'],
-      ['SwapMainPreview', 'Swap Main/Preview'],
-      ['PrecisionMode', 'Precision mode'],
-    ];
-    return `
-      <section class="print-sheet print-only">
-        <header class="print-header">
-          <div><span>Project</span><h1 data-project-name-output>${escapeHtml(this.state.projectName || 'Joystick Camera Control')}</h1></div>
-          <div class="print-room"><span>Room</span><strong data-room-name-output>${escapeHtml(this.state.roomName || 'Room')}</strong><small>${this.state.handedness === 'right' ? 'Right' : 'Left'}-handed switch · ${this.state.previewMode === 'On' ? `Preview output ${this.state.previewOutput}` : 'Preview display off'}</small></div>
-        </header>
-        <div class="print-layout">
-          <aside>
-            <div class="print-section-title"><span>01</span><h2>Joystick map</h2></div>
-            ${this.renderDiagram()}
-            <div class="legend">
-              ${[
-                ['main', 'Main'],
-                ['preview', 'Preview'],
-                ['camera', 'Camera'],
-                ['motion', 'Motion / swap'],
-                ['selfview', 'Selfview'],
-                ['unused', 'No action'],
-              ].map(([category, label]) => `<span><i class="${category}"></i>${label}</span>`).join('')}
-            </div>
-            <div class="print-quick-use">
-              <h3>Quick operation</h3>
-              <p><strong>1.</strong> Choose Main or Preview. <strong>2.</strong> Choose a camera. <strong>3.</strong> Tilt with stick pitch, pan with twist, and zoom with mini-stick pitch. <strong>4.</strong> Frame Preview, then swap it live.</p>
-              <div class="print-action-chips">
-                ${targetActions.map(([id, label]) => `<span><strong>${escapeHtml(label)}</strong>${this.buttonChips(this.assignedButtons(id), this.assignmentInfo(builtInAssignment(id)).category)}</span>`).join('')}
-              </div>
-            </div>
-          </aside>
-          <div class="print-reference">
-            <div class="print-section-title"><span>02</span><h2>Button reference</h2></div>
-            <table class="print-button-table">
-              <thead><tr><th>#</th><th>Physical control</th><th>Action</th><th>Operator result</th></tr></thead>
-              <tbody>
-                ${PHYSICAL_BUTTONS.map((button) => {
-                  const info = this.assignmentInfo(this.state.assignments[button.number]);
-                  return `<tr><td><span class="chip ${info.category}">${button.number}</span></td><td><strong>${escapeHtml(button.label)}</strong><code>${escapeHtml(logicalButtonId(button, this.state.handedness))}</code></td><td><strong>${escapeHtml(info.label)}</strong><code>${escapeHtml(info.code)}</code></td><td>${escapeHtml(info.description)}</td></tr>`;
-                }).join('')}
-              </tbody>
-            </table>
-            <div class="print-camera-reference">
-              <div class="print-section-title"><span>03</span><h2>Camera reference</h2></div>
-              <table>
-                <thead><tr><th>Camera</th><th>Button</th><th>ButtonAction</th><th>Video</th><th>Control</th></tr></thead>
-                <tbody>
-                  ${this.state.cameras.map((camera) => {
-                    const button = PHYSICAL_BUTTONS.find((candidate) => this.state.assignments[candidate.number] === cameraAssignment(camera.id));
-                    return `<tr><td><strong>${escapeHtml(camera.Name)}</strong></td><td>${button ? `<span class="chip camera">${button.number}</span>` : '-'}</td><td><code>${escapeHtml(cameraActions.get(camera.id) ?? '')}</code></td><td>${escapeHtml(camera.ConnectorId)}</td><td>${escapeHtml(camera.ControlId)}</td></tr>`;
-                  }).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-        <footer class="print-footer">
-          <span>Joystick Camera Control · Cisco Sample Code</span>
-          <span>USB or uncertified cameras may be switched but require additional development for joystick PTZ.</span>
-        </footer>
-      </section>`;
-  }
-
   private render(): void {
     const currentYear = new Date().getFullYear();
     this.root.innerHTML = `
       <div class="site-shell">
         <nav class="topbar no-print">
-          <button type="button" class="wordmark" data-workflow-step="1"><span aria-hidden="true"><img src="/icons/joystick-camera-control.svg" alt=""></span><strong>Joystick Camera Control</strong></button>
+          <button type="button" class="wordmark" data-workflow-step="1">
+            <span class="wordmark-mark" aria-hidden="true"><img src="/icons/joystick-camera-control.svg" alt=""></span>
+            <span class="wordmark-copy"><strong>Joystick Camera Control</strong><small>${JOYSTICK_MODEL}</small></span>
+          </button>
           <div class="topbar-actions">
             <label class="theme-picker"><span>Theme</span><select id="theme-preference" aria-label="Theme">
               <option value="system" ${this.themePreference === 'system' ? 'selected' : ''}>System</option>
@@ -1021,7 +903,7 @@ export class ConfiguratorApp {
         <main class="workflow-shell">
           ${this.renderWorkflowRail()}
           <div class="workflow-main">
-            <section class="workflow-page" tabindex="-1" aria-label="${WORKFLOW_STEPS[this.currentStep - 1].title}">
+            <section class="workflow-page" tabindex="-1" aria-label="${WORKFLOW_STEPS[this.workflow.currentStep - 1].title}">
               ${this.renderCurrentPage()}
             </section>
             ${this.renderWorkflowActions()}
@@ -1037,7 +919,7 @@ export class ConfiguratorApp {
         ${this.renderInstallConfirmationModal()}
         ${this.renderInstallationProgressModal()}
       </div>
-      ${this.renderPrintSheet()}`;
+      ${renderConfiguredPrintSheet(this.state)}`;
     this.bindEvents();
     if (this.deviceConnectionOpen) {
       const dialog = this.byId('device-connection-dialog') as HTMLDialogElement | null;
@@ -1074,6 +956,8 @@ export class ConfiguratorApp {
       }
       input.addEventListener('change', () => {
         if (key === 'handedness') this.state.handedness = input.value as ConfiguratorState['handedness'];
+        if (key === 'setDefaultCamera') this.state.setDefaultCamera = input.value === 'true';
+        if (key === 'panelLocation') this.state.panelLocation = input.value as ConfiguratorState['panelLocation'];
         if (key === 'previewMode') this.state.previewMode = input.value as ConfiguratorState['previewMode'];
         if (key === 'previewOutput') this.state.previewOutput = Number(input.value);
         if (key === 'panTiltRampSpeed') this.state.panTiltRampSpeed = Number(input.value);
@@ -1190,7 +1074,7 @@ export class ConfiguratorApp {
       this.captureDeviceFields();
       this.credentials.password = '';
       this.deviceConnectionOpen = false;
-      this.pendingDeviceMacroFetch = false;
+      this.pendingDeviceAction = undefined;
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-close-install-confirmation]').forEach((button) => {
       button.addEventListener('click', () => this.closeInstallConfirmation());
@@ -1241,6 +1125,7 @@ export class ConfiguratorApp {
 
   private startFreshInstallation(): void {
     this.state = createDefaultState();
+    this.installationMode = 'install';
     this.configurationMessage = '';
     this.configurationError = '';
     this.navigateToStep(2);
@@ -1255,6 +1140,7 @@ export class ConfiguratorApp {
     try {
       if (file.size > 1024 * 1024) throw new Error('Choose a macro smaller than 1 MiB.');
       this.loadConfigurationSource(await file.text(), `Loaded ${file.name}. Review the recovered settings before downloading or installing.`);
+      this.installationMode = 'install';
       loaded = true;
     } catch (error) {
       this.configurationError = error instanceof Error ? error.message : String(error);
@@ -1264,7 +1150,8 @@ export class ConfiguratorApp {
   }
 
   private async beginDeviceMacroFetch(): Promise<void> {
-    if (this.device && this.verifiedDevice?.serialMatches) {
+    const session = this.deviceSession.snapshot();
+    if (session.connected && session.verifiedDevice?.serialMatches) {
       await this.fetchInstalledMacro(true);
       return;
     }
@@ -1272,7 +1159,8 @@ export class ConfiguratorApp {
   }
 
   private async fetchInstalledMacro(navigateAfterLoad = false): Promise<void> {
-    if (!this.device || !this.verifiedDevice?.serialMatches || !this.sources) return;
+    const session = this.deviceSession.snapshot();
+    if (!session.connected || !session.verifiedDevice?.serialMatches || !this.sources) return;
     this.configurationMessage = '';
     this.configurationError = '';
     this.busy = true;
@@ -1280,15 +1168,16 @@ export class ConfiguratorApp {
     this.render();
     let loaded = false;
     try {
-      const source = await fetchMacroSource(this.device, this.sources.manifest.macro.macroName);
+      const source = await this.deviceSession.fetchInstalledMacro(this.sources.manifest.macro.macroName);
       this.loadConfigurationSource(source, `Fetched ${this.sources.manifest.macro.macroName} from the verified device. Review the recovered settings before installing changes.`);
+      this.installationMode = 'update';
       this.statusMessage = 'The installed macro configuration was loaded without changing the device.';
-      this.pendingDeviceMacroFetch = false;
+      this.pendingDeviceAction = undefined;
       loaded = true;
     } catch (error) {
       this.configurationError = error instanceof Error ? error.message : String(error);
       this.statusMessage = 'The device was not changed.';
-      this.pendingDeviceMacroFetch = false;
+      this.pendingDeviceAction = undefined;
     } finally {
       this.busy = false;
       if (loaded && navigateAfterLoad) this.navigateToStep(2);
@@ -1325,15 +1214,13 @@ export class ConfiguratorApp {
   }
 
   private downloadUserManual(): void {
-    const link = document.createElement('a');
-    link.href = `./assets/${USER_MANUAL_FILE_NAME}`;
-    link.download = USER_MANUAL_FILE_NAME;
-    link.click();
+    const manual = generateConfiguredUserManual(this.state);
+    downloadText(manual.fileName, manual.html, 'text/html;charset=utf-8');
   }
 
   private openDeviceConnection(fetchMacro: boolean): void {
-    this.hasWorkflowProgress = true;
-    this.pendingDeviceMacroFetch = fetchMacro;
+    this.workflow.markProgress();
+    this.pendingDeviceAction = fetchMacro ? 'fetch-macro' : 'install';
     this.deviceConnectionOpen = true;
     this.errorMessage = '';
     this.statusMessage = '';
@@ -1344,7 +1231,7 @@ export class ConfiguratorApp {
     this.captureDeviceFields();
     this.credentials.password = '';
     this.deviceConnectionOpen = false;
-    this.pendingDeviceMacroFetch = false;
+    this.pendingDeviceAction = undefined;
     const dialog = this.byId('device-connection-dialog') as HTMLDialogElement | null;
     if (dialog?.open) dialog.close();
   }
@@ -1388,66 +1275,51 @@ export class ConfiguratorApp {
   private async connectDevice(): Promise<void> {
     this.captureDeviceFields();
     this.errorMessage = '';
-    this.installResult = undefined;
-    let fetchAfterConnect = false;
+    let actionAfterConnect: PendingDeviceAction | undefined;
     try {
-      if (!this.credentials.username || !this.credentials.password) throw new Error('Enter administrator credentials.');
-      if (!this.expectedSerial) throw new Error('Enter the expected device serial number.');
-      this.credentials.host = normalizeDeviceHost(this.credentials.host);
-      this.persistDeviceIdentity();
       this.busy = true;
       this.statusMessage = 'Connecting to the RoomOS device.';
       this.render();
-      this.device = await connectToDevice(this.credentials);
-      this.verifiedDevice = await verifyConnectedDevice(this.device, this.expectedSerial);
-      if (!this.verifiedDevice.serialMatches) {
-        this.device.close();
-        this.device = undefined;
-        throw new Error('The connected device did not match the expected serial number.');
-      }
-      fetchAfterConnect = this.pendingDeviceMacroFetch;
-      this.statusMessage = fetchAfterConnect
+      const session = await this.deviceSession.connect(this.credentials, this.expectedSerial);
+      this.credentials.host = session.host ?? this.credentials.host;
+      this.persistDeviceIdentity();
+      actionAfterConnect = this.pendingDeviceAction;
+      this.pendingDeviceAction = undefined;
+      this.statusMessage = actionAfterConnect === 'fetch-macro'
         ? 'Connected and verified. Reading the installed macro.'
-        : 'Connected and verified. Review the installation plan.';
+        : 'Connected and verified. Starting installation.';
       this.deviceConnectionOpen = false;
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : String(error);
-      this.device?.close();
-      this.device = undefined;
-      this.verifiedDevice = undefined;
     } finally {
       this.credentials.password = '';
       this.busy = false;
       this.render();
     }
-    if (fetchAfterConnect) await this.fetchInstalledMacro(true);
+    if (actionAfterConnect === 'fetch-macro') await this.fetchInstalledMacro(true);
+    if (actionAfterConnect === 'install') await this.installDevice();
   }
 
   private disconnectDevice(): void {
-    this.device?.close();
-    this.device = undefined;
-    this.verifiedDevice = undefined;
+    this.deviceSession.disconnect();
     this.credentials.password = '';
     this.statusMessage = 'Disconnected. Credentials were cleared from the active connection.';
-    this.installResult = undefined;
-    this.pendingDeviceMacroFetch = false;
+    this.pendingDeviceAction = undefined;
     this.deviceConnectionOpen = false;
     this.render();
   }
 
   private async openInstallConfirmation(): Promise<void> {
-    if (!this.device || !this.sources || !this.verifiedDevice?.serialMatches || this.busy) return;
+    const session = this.deviceSession.snapshot();
+    if (!session.connected || !this.sources || !session.verifiedDevice?.serialMatches || this.busy) return;
     this.errorMessage = '';
     this.installConfirmationOpen = false;
     this.busy = true;
     this.statusMessage = 'Checking the device for active calls before confirmation.';
     this.render();
     try {
-      this.verifiedDevice = await verifyConnectedDevice(this.device, this.expectedSerial);
-      if (!this.verifiedDevice.serialMatches) {
-        throw new Error('The connected device no longer matches the expected serial number.');
-      }
-      this.statusMessage = this.verifiedDevice.activeCalls > 0
+      const refreshed = await this.deviceSession.recheck();
+      this.statusMessage = (refreshed.verifiedDevice?.activeCalls ?? 0) > 0
         ? 'An active call was detected. Installation remains blocked.'
         : 'Device status refreshed. Review the confirmation prompt.';
       this.installConfirmationOpen = true;
@@ -1480,33 +1352,29 @@ export class ConfiguratorApp {
   }
 
   private async installDevice(): Promise<void> {
-    if (!this.device || !this.sources || !this.verifiedDevice?.serialMatches || this.verifiedDevice.activeCalls !== 0) return;
+    const session = this.deviceSession.snapshot();
+    if (!session.connected || !this.sources || !session.verifiedDevice?.serialMatches) return;
+    if (session.verifiedDevice.activeCalls !== 0) {
+      this.errorMessage = 'Installation is blocked while the device has an active call.';
+      this.statusMessage = 'Connected and verified, but no device changes were made.';
+      this.render();
+      return;
+    }
     this.errorMessage = '';
-    this.installResult = undefined;
     this.installationProgressMessages = [];
+    this.installationProgressMode = this.installationMode;
     this.installationProgressOpen = true;
     this.busy = true;
     this.recordInstallationProgress('Rechecking the device immediately before making changes.');
     this.render();
     try {
-      this.verifiedDevice = await verifyConnectedDevice(this.device, this.expectedSerial);
-      if (!this.verifiedDevice.serialMatches) {
-        throw new Error('The connected device no longer matches the expected serial number.');
-      }
-      if (this.verifiedDevice.activeCalls > 0) {
-        const message = 'A call started after the confirmation prompt. Installation remains blocked.';
-        this.errorMessage = message;
-        this.recordInstallationProgress(message);
-        return;
-      }
       this.recordInstallationProgress('Loading the external Thrustmaster class before making device changes.');
       this.render();
       const [dependencySource, macroSource] = await Promise.all([
         loadDependencySource(this.sources.manifest),
         Promise.resolve(generateConfiguredMacro(this.sources.macroTemplate, this.state)),
       ]);
-      this.installResult = await installAndVerify(
-        this.device,
+      const result = await this.deviceSession.install(
         {
           dependencyName: this.sources.manifest.dependency.macroName,
           dependencySource,
@@ -1518,7 +1386,8 @@ export class ConfiguratorApp {
           this.render();
         },
       );
-      this.recordInstallationProgress(this.installResult.kind === 'ready'
+      this.installationMode = 'update';
+      this.recordInstallationProgress(result.kind === 'ready'
         ? 'Installation commands were accepted and macro readiness was observed.'
         : 'Installation commands were accepted; review the initialization result below.');
     } catch (error) {

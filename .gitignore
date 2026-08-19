@@ -1,1 +1,5 @@
 .roomos-local/
+
+# Generated icon-review artifacts are kept out of the installer public tree.
+/tmp/icons/*-validation.json
+/tmp/icons/legacy/

@@ -3,6 +3,118 @@ import { describe, expect, it } from 'vitest';
 
 const macroUrl = new URL('../../Joystick_CameraControl_ProductionSwitcher.js', import.meta.url);
 
+interface RecoverySnapshot {
+  enabled: boolean;
+  mainVideo: string;
+  mainControl: string;
+  previewVideo: string;
+  previewControl: string;
+  currentControl: string;
+  controlling: string;
+  handedness: string;
+  trigger: boolean;
+  axes: { Y: number; RZ: number; HAT0Y: number };
+  lastPanTilt: { Tilt: string; Pan: string; Speed: number };
+  lastZoom: { Zoom: string; Speed: number };
+  controls: Record<string, unknown>;
+}
+
+interface RecoveryRuntime {
+  prepare(): void;
+  enable(): Promise<void>;
+  disable(): Promise<void>;
+  recover(): Promise<void>;
+  swap(): Promise<void>;
+  controlMain(): void;
+  controlPreview(): void;
+  selectSource(cameraButtonAction: string): void;
+  installPanel(): Promise<void>;
+  statusSections(): Record<string, string>;
+  dispatchInput(data: unknown): void;
+  snapshot(): RecoverySnapshot;
+  handledInputs(): unknown[];
+}
+
+function createRecoveryRuntime(source: string, xapi: unknown, logger: Console): RecoveryRuntime {
+  const executableSource = source
+    .replace(/^import .*;\n/gm, '')
+    .replace(/\ninit\(\);\s*$/, '');
+  class FakeController {
+    readonly buttons = [
+      'STICK_TRIGGER', 'STICK_SOUTH', 'STICK_EAST', 'STICK_WEST',
+      'BASE_LEFT_1', 'BASE_LEFT_2', 'BASE_LEFT_3', 'BASE_LEFT_6',
+      'BASE_LEFT_5', 'BASE_LEFT_4', 'BASE_RIGHT_3', 'BASE_RIGHT_2',
+      'BASE_RIGHT_1', 'BASE_RIGHT_4', 'BASE_RIGHT_5', 'BASE_RIGHT_6',
+    ];
+    readonly stick = { on: () => undefined };
+    readonly button = { on: () => undefined };
+    readonly inputs: unknown[] = [];
+    handleInput(data: unknown): void { this.inputs.push(data); }
+    setHandednessHardwareToggle(): void {}
+  }
+  const exposeTestInterface = `
+    return {
+      prepare() {
+        joystickDemoValidateCameraConfig();
+        joystickDemoResetTrackingState();
+        joystickDemoCurrentMainVideo = '2';
+        joystickDemoCurrentMainControl = '2';
+        joystickDemoCurrentPreviewVideo = '3';
+        joystickDemoCurrentPreviewControl = '3';
+        joystickDemoCurrentCamControlId = '3';
+        joystickDemoControlling = 'preview';
+        joystickDemoHandedness = 'left';
+        joystickDemoTriggerState = true;
+        joystickDemoAxisState = { Y: 72, RZ: -81, HAT0Y: 64 };
+        joystickDemoLastPanTiltSent = { Tilt: 'Up', Pan: 'Left', Speed: 6 };
+        joystickDemoLastZoomSent = { Zoom: 'Out', Speed: 4 };
+        joystickDemoEnabled = true;
+      },
+      async enable() {
+        joystickDemoValidateCameraConfig();
+        joystickDemoResetTrackingState();
+        await joystickDemoSetEnabled(true);
+      },
+      disable() { return joystickDemoSetEnabled(false); },
+      recover: joystickDemoRecoverFromSpeakerTrackActivation,
+      swap: joystickDemoSwapMainAndPreviewCameras,
+      controlMain() { joystickDemoHandleControlMain('Released', 'TEST_MAIN'); },
+      controlPreview() { joystickDemoHandleControlPreview('Released', 'TEST_PREVIEW'); },
+      selectSource(cameraButtonAction) { joystickDemoSelectSource(cameraButtonAction, 'TEST_CAMERA'); },
+      installPanel: installJoystickDemoPanel,
+      statusSections: joystickDemoGetStatusSections,
+      dispatchInput(data) {
+        if (joystickDemoEnabled) joystickDemoController.handleInput(data);
+      },
+      snapshot() {
+        return {
+          enabled: joystickDemoEnabled,
+          mainVideo: joystickDemoCurrentMainVideo,
+          mainControl: joystickDemoCurrentMainControl,
+          previewVideo: joystickDemoCurrentPreviewVideo,
+          previewControl: joystickDemoCurrentPreviewControl,
+          currentControl: joystickDemoCurrentCamControlId,
+          controlling: joystickDemoControlling,
+          handedness: joystickDemoHandedness,
+          trigger: joystickDemoTriggerState,
+          axes: { ...joystickDemoAxisState },
+          lastPanTilt: { ...joystickDemoLastPanTiltSent },
+          lastZoom: { ...joystickDemoLastZoomSent },
+          controls: { ...config.controls }
+        };
+      },
+      handledInputs() { return [...joystickDemoController.inputs]; }
+    };
+  `;
+  const factory = new Function(
+    'xapi',
+    'ThrustMaster16000M_JoyStick',
+    'console',
+    `${executableSource}\n${exposeTestInterface}`,
+  ) as (xapiValue: unknown, controller: typeof FakeController, consoleValue: Console) => RecoveryRuntime;
+  return factory(xapi, FakeController, logger);
+}
+
 describe('joystick runtime behavior', () => {
   it('turns off automatic camera tracking before enabling manual control', async () => {
     const source = await readFile(macroUrl, 'utf8');
@@ -31,6 +143,71 @@ describe('joystick runtime behavior', () => {
     expect(transition).toContain('await joystickDemoDisableAutomaticCameraTracking();');
     expect(transition.indexOf('await joystickDemoDisableAutomaticCameraTracking();'))
       .toBeLessThan(transition.indexOf('await resetJoystickDemo(!enabled);'));
+  });
+
+  it('sets the default Main camera only while enabling with SetDefaultCamera true', async () => {
+    const source = await readFile(macroUrl, 'utf8');
+
+    for (const [setDefaultCamera, expectedMainSources] of [
+      [true, ['1']],
+      [false, []],
+    ] as const) {
+      const mainSources: string[] = [];
+      const configuredSource = source.replace(
+        'SetDefaultCamera: true',
+        `SetDefaultCamera: ${setDefaultCamera}`,
+      );
+      const xapi = {
+        Command: {
+          Camera: { Ramp: async () => undefined },
+          Cameras: {
+            SpeakerTrack: {
+              Deactivate: async () => undefined,
+              Set: async () => undefined,
+              Closeup: { Deactivate: async () => undefined },
+              Frames: { Deactivate: async () => undefined },
+            },
+            PresenterTrack: { Set: async () => undefined },
+          },
+          Video: {
+            Input: {
+              SetMainVideoSource: async ({ ConnectorId }: { ConnectorId: string }) => {
+                mainSources.push(ConnectorId);
+              },
+            },
+            Matrix: {
+              Assign: async () => undefined,
+              Reset: async () => undefined,
+            },
+          },
+          UserInterface: {
+            Extensions: { Widget: { SetValue: async () => undefined } },
+          },
+        },
+      };
+      const logger = {
+        log: () => undefined,
+        debug: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      } as unknown as Console;
+      const runtime = createRecoveryRuntime(configuredSource, xapi, logger);
+
+      await runtime.enable();
+
+      expect(mainSources).toEqual(expectedMainSources);
+
+      runtime.prepare();
+      const beforeDisable = runtime.snapshot();
+      mainSources.length = 0;
+      await runtime.disable();
+
+      expect(mainSources).toEqual([]);
+      expect(runtime.snapshot()).toMatchObject({
+        mainVideo: beforeDisable.mainVideo,
+        mainControl: beforeDisable.mainControl,
+      });
+    }
   });
 
   it('does not change tracking configuration or restore tracking when disabled', async () => {
@@ -96,6 +273,181 @@ describe('joystick runtime behavior', () => {
     expect(source).toContain('[joystickDemoControlsPageId, joystickDemoStatusPageId].includes(PageId)');
   });
 
+  it('swaps the Status camera names and control method while retaining the controlled camera', async () => {
+    const source = await readFile(macroUrl, 'utf8');
+    const xapi = {
+      Command: {
+        Video: {
+          Input: { SetMainVideoSource: async () => undefined },
+          Matrix: { Assign: async () => undefined },
+        },
+        UserInterface: {
+          Extensions: { Widget: { SetValue: async () => undefined } },
+        },
+      },
+    };
+    const logger = {
+      log: () => undefined,
+      debug: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    } as unknown as Console;
+    const runtime = createRecoveryRuntime(source, xapi, logger);
+    runtime.prepare();
+
+    expect(runtime.statusSections()).toMatchObject({
+      ControlMethod: 'Control method: Preview',
+      Main: 'Main: Camera 2',
+      Preview: 'Preview: Camera 3',
+    });
+
+    await runtime.swap();
+
+    expect(runtime.snapshot()).toMatchObject({
+      mainVideo: '3',
+      previewVideo: '2',
+      currentControl: '3',
+      controlling: 'main',
+    });
+    expect(runtime.statusSections()).toMatchObject({
+      ControlMethod: 'Control method: Live',
+      Main: 'Main: Camera 3',
+      Preview: 'Preview: Camera 2',
+    });
+
+    await runtime.swap();
+
+    expect(runtime.snapshot()).toMatchObject({
+      mainVideo: '2',
+      previewVideo: '3',
+      currentControl: '3',
+      controlling: 'preview',
+    });
+    expect(runtime.statusSections()).toMatchObject({
+      ControlMethod: 'Control method: Preview',
+      Main: 'Main: Camera 2',
+      Preview: 'Preview: Camera 3',
+    });
+  });
+
+  it('keeps Status aligned across Main, Preview, camera-selection, and Swap controls', async () => {
+    const source = await readFile(macroUrl, 'utf8');
+    const xapi = {
+      Command: {
+        Camera: { Ramp: async () => undefined },
+        Video: {
+          Input: { SetMainVideoSource: async () => undefined },
+          Matrix: { Assign: async () => undefined },
+        },
+        UserInterface: {
+          Extensions: { Widget: { SetValue: async () => undefined } },
+        },
+      },
+    };
+    const logger = {
+      log: () => undefined,
+      debug: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    } as unknown as Console;
+    const runtime = createRecoveryRuntime(source, xapi, logger);
+    runtime.prepare();
+
+    runtime.controlMain();
+    runtime.selectSource('SelectCamera4');
+    expect(runtime.statusSections()).toMatchObject({
+      ControlMethod: 'Control method: Live',
+      Main: 'Main: Camera 4',
+      Preview: 'Preview: Camera 3',
+    });
+
+    runtime.controlPreview();
+    runtime.selectSource('SelectCamera1');
+    expect(runtime.statusSections()).toMatchObject({
+      ControlMethod: 'Control method: Preview',
+      Main: 'Main: Camera 4',
+      Preview: 'Preview: Camera 1',
+    });
+
+    await runtime.swap();
+    expect(runtime.statusSections()).toMatchObject({
+      ControlMethod: 'Control method: Live',
+      Main: 'Main: Camera 1',
+      Preview: 'Preview: Camera 4',
+    });
+  });
+
+  it('downloads the installer icon and applies it to the saved Joystick Controls panel', async () => {
+    const source = await readFile(macroUrl, 'utf8');
+    const configuredSource = source.replace(
+      "panelLocation: 'HomeScreenAndCallControls'",
+      "panelLocation: 'ControlPanel'",
+    );
+    const calls: Array<{ command: string; parameters: Record<string, unknown> }> = [];
+    let savedPanelXml = '';
+    const xapi = {
+      Command: {
+        UserInterface: {
+          Extensions: {
+            Icon: {
+              Download: async (parameters: Record<string, unknown>) => {
+                calls.push({ command: 'Icon.Download', parameters });
+                return { IconId: 'downloaded-installer-icon' };
+              },
+            },
+            Panel: {
+              Save: async (parameters: Record<string, unknown>, panelXml: string) => {
+                calls.push({ command: 'Panel.Save', parameters });
+                savedPanelXml = panelXml;
+              },
+              Update: async (parameters: Record<string, unknown>) => {
+                calls.push({ command: 'Panel.Update', parameters });
+                return {};
+              },
+            },
+            Widget: { SetValue: async () => undefined },
+          },
+        },
+      },
+    };
+    const logger = {
+      log: () => undefined,
+      debug: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    } as unknown as Console;
+    const runtime = createRecoveryRuntime(configuredSource, xapi, logger);
+    runtime.prepare();
+
+    await runtime.installPanel();
+
+    expect(source).toContain("panelLocation: 'HomeScreenAndCallControls'");
+    expect(source).toContain('joystickDemoValidatePanelLocationConfig();');
+    expect(savedPanelXml).toContain('<Location>ControlPanel</Location>');
+    expect(savedPanelXml).not.toContain('<Order>');
+
+    expect(calls).toEqual([
+      {
+        command: 'Panel.Save',
+        parameters: { PanelId: 'ic26_avDemo~joy' },
+      },
+      {
+        command: 'Icon.Download',
+        parameters: {
+          Url: 'https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/icons/joystick-camera-control-512.png',
+        },
+      },
+      {
+        command: 'Panel.Update',
+        parameters: {
+          IconId: 'downloaded-installer-icon',
+          Icon: 'Custom',
+          PanelId: 'ic26_avDemo~joy',
+        },
+      },
+    ]);
+  });
+
   it('recovers the remembered Main source when SpeakerTrack activates during joystick control', async () => {
     const source = await readFile(macroUrl, 'utf8');
     const recoveryStart = source.indexOf('async function joystickDemoRecoverFromSpeakerTrackActivation()');
@@ -109,5 +461,96 @@ describe('joystick runtime behavior', () => {
     expect(recovery).not.toContain('joystickDemoResetTrackingState');
     expect(recovery).toContain("Title: 'Joystick Controls active'");
     expect(recovery).toContain("Text: 'Disable Joystick Controls before enabling SpeakerTrack.'");
+  });
+
+  it('stops every axis and clears transient input before SpeakerTrack recovery re-enables handling', async () => {
+    const source = await readFile(macroUrl, 'utf8');
+    const events: Array<{ name: string; snapshot: RecoverySnapshot }> = [];
+    const warnings: unknown[][] = [];
+    let runtime: RecoveryRuntime;
+    const capture = (name: string) => {
+      const snapshot = runtime.snapshot();
+      events.push({ name, snapshot });
+      runtime.dispatchInput({ during: name });
+    };
+    const ramp = async (parameters: Record<string, unknown>) => {
+      const axis = ['Pan', 'Tilt', 'Zoom'].find((candidate) => candidate in parameters) ?? 'Unknown';
+      capture(`stop-${axis}`);
+      if (axis === 'Pan') throw new Error('simulated Pan stop failure');
+    };
+    const widgetSetValue = async (parameters: { WidgetId: string; Value: string }) => {
+      if (parameters.WidgetId.endsWith('~enabled') && parameters.Value === 'enabled') {
+        capture('panel-synchronized-enabled');
+      }
+    };
+    const xapi = {
+      Command: {
+        Camera: { Ramp: ramp },
+        Cameras: {
+          SpeakerTrack: {
+            Deactivate: async () => capture('tracking-deactivated'),
+            Set: async () => undefined,
+            Closeup: { Deactivate: async () => undefined },
+            Frames: { Deactivate: async () => undefined },
+          },
+          PresenterTrack: { Set: async () => undefined },
+        },
+        Video: {
+          Input: { SetMainVideoSource: async () => capture('main-restored') },
+        },
+        UserInterface: {
+          Message: { Alert: { Display: async () => undefined } },
+          Extensions: { Widget: { SetValue: widgetSetValue } },
+        },
+      },
+    };
+    const logger = {
+      log: () => undefined,
+      debug: () => undefined,
+      warn: (...args: unknown[]) => warnings.push(args),
+      error: () => undefined,
+    } as unknown as Console;
+    runtime = createRecoveryRuntime(source, xapi, logger);
+    runtime.prepare();
+    const before = runtime.snapshot();
+
+    await expect(runtime.recover()).resolves.toBeUndefined();
+
+    expect(events.slice(0, 3).map((event) => event.name)).toEqual([
+      'stop-Pan',
+      'stop-Tilt',
+      'stop-Zoom',
+    ]);
+    expect(events.slice(0, 3).every((event) => !event.snapshot.enabled)).toBe(true);
+    const tracking = events.find((event) => event.name === 'tracking-deactivated');
+    expect(tracking?.snapshot).toMatchObject({
+      enabled: false,
+      trigger: false,
+      axes: { Y: 0, RZ: 0, HAT0Y: 0 },
+      lastPanTilt: { Tilt: 'Stop', Pan: 'Stop', Speed: 0 },
+      lastZoom: { Zoom: 'Stop', Speed: 0 },
+    });
+    expect(events.findIndex((event) => event.name === 'tracking-deactivated'))
+      .toBeLessThan(events.findIndex((event) => event.name === 'main-restored'));
+    const finalSync = events.find((event) => event.name === 'panel-synchronized-enabled');
+    expect(finalSync?.snapshot).toMatchObject({
+      enabled: true,
+      trigger: false,
+      axes: { Y: 0, RZ: 0, HAT0Y: 0 },
+      lastPanTilt: { Tilt: 'Stop', Pan: 'Stop', Speed: 0 },
+      lastZoom: { Zoom: 'Stop', Speed: 0 },
+    });
+    expect(runtime.handledInputs()).toEqual([{ during: 'panel-synchronized-enabled' }]);
+    expect(runtime.snapshot()).toMatchObject({
+      mainVideo: before.mainVideo,
+      mainControl: before.mainControl,
+      previewVideo: before.previewVideo,
+      previewControl: before.previewControl,
+      currentControl: before.currentControl,
+      controlling: before.controlling,
+      handedness: before.handedness,
+      controls: before.controls,
+    });
+    expect(warnings.some((args) => args.map(String).join(' ').includes('Failed to stop Pan'))).toBe(true);
   });
 });

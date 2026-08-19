@@ -19,7 +19,7 @@ or implied.
  *
  * Date Created:            July 22, 2026
  * Revised:                 August 19, 2026
- * Version:                 1.9.7
+ * Version:                 2.0.0
  *
  * Description:             Standalone Thrustmaster T.16000M camera controller
  *                          and Main/Preview production switcher for RoomOS.
@@ -52,8 +52,12 @@ const config = {
     mode: 'On',
     output: 2
   },
+  userInterface: {
+    panelLocation: 'HomeScreenAndCallControls'
+  },
   joystick: {
     StartingHand: 'right',
+    SetDefaultCamera: true,
     DefaultCameraAction: 'SelectCamera1',
     Camera: {
       PanTiltRampSpeed: 12,
@@ -123,12 +127,12 @@ const joystickDemoEnabledStatusWidgetId = `${joystickDemoPanelId}~statusEnabled`
 const joystickDemoControlMethodStatusWidgetId = `${joystickDemoPanelId}~statusMethod`;
 const joystickDemoMainStatusWidgetId = `${joystickDemoPanelId}~statusMain`;
 const joystickDemoPreviewStatusWidgetId = `${joystickDemoPanelId}~statusPreview`;
+const joystickDemoPanelIconUrl = `${config.documentation.InstallerUrl.replace(/\/+$/, '')}/icons/joystick-camera-control-512.png`;
 
 const joystickDemoPanelXml = `<Extensions>
   <Version>1.11</Version>
   <Panel>
-    <Order>2</Order>
-    <Location>HomeScreen</Location>
+    <Location>${config.userInterface.panelLocation}</Location>
     <Icon>Sliders</Icon>
     <Color>#262626</Color>
     <Name>Joystick Controls</Name>
@@ -324,6 +328,29 @@ function joystickDemoError(...args) {
   console.error('[Joystick_Demo]:', ...args);
 }
 
+async function fetchIconByUrl(iconUrl, panelId) {
+  return new Promise(async (resolve, reject) => {
+    if (!iconUrl) reject({ Context: `iconUrl parameter "undefined"`, IconUrl: iconUrl });
+    if (!panelId) reject({ Context: `panelId parameter "undefined"`, PanelId: panelId });
+    if (!/^(https?|ftp):\/\/[^\s/$.?#].[^\s]*$/i.test(iconUrl)) reject({ Context: `iconUrl parameter does not contain a valid Url`, iconUrl });
+    try {
+      const getIcon = (await xapi.Command.UserInterface.Extensions.Icon.Download({ Url: iconUrl }));
+      console.debug(`Icon Fetch Response: `, getIcon);
+      const iconId = getIcon.IconId;
+      const uploadIcon = await xapi.Command.UserInterface.Extensions.Panel.Update({ IconId: iconId, Icon: 'Custom', PanelId: panelId });
+      console.debug('Icon Upload Response:', uploadIcon);
+      resolve({ Message: `Icon Applied`, PanelId: panelId, IconId: iconId });
+    } catch (e) {
+      let err = {
+        Context: `Failed to Fetch Icon`,
+        IconUrl: iconUrl,
+        Error: e
+      };
+      reject(err);
+    }
+  });
+}
+
 /**
  * Resolves a physical button to the class ID for the requested hand.
  * @param {{ RightButtonId: string, LeftButtonId: string }} button
@@ -348,6 +375,20 @@ function joystickDemoHasNoButtonAction(buttonAction) {
 
 function joystickDemoPreviewIsEnabled() {
   return config.previewDisplay.mode === 'On';
+}
+
+/**
+ * Validates where RoomOS exposes the Joystick Controls panel.
+ */
+function joystickDemoValidatePanelLocationConfig() {
+  const panelLocations = ['HomeScreen', 'CallControls', 'HomeScreenAndCallControls', 'ControlPanel'];
+
+  if (!config.userInterface || typeof config.userInterface !== 'object' || Array.isArray(config.userInterface)) {
+    throw new Error('config.userInterface must be an object');
+  }
+  if (!panelLocations.includes(config.userInterface.panelLocation)) {
+    throw new Error(`config.userInterface.panelLocation must be one of: ${panelLocations.join(', ')}`);
+  }
 }
 
 /**
@@ -392,6 +433,10 @@ function joystickDemoValidateCameraMotionConfig() {
  */
 function joystickDemoValidateCameraConfig() {
   const cameras = config.cameras;
+
+  if (typeof config.joystick.SetDefaultCamera !== 'boolean') {
+    throw new Error('config.joystick.SetDefaultCamera must be true or false');
+  }
 
   if (!Array.isArray(cameras)) {
     throw new Error('config.cameras must be an array');
@@ -765,14 +810,25 @@ async function joystickDemoSetCameraControlId(input) {
  * assigned to a different camera.
  * @roomosxapi https://roomos.cisco.com/xapi/Command.Camera.Ramp/
  */
-async function joystickDemoStopCameraMovement() {
-  try {
-    await xapi.Command.Camera.Ramp({ Pan: 'Stop', CameraId: joystickDemoCurrentCamControlId });
-    await xapi.Command.Camera.Ramp({ Tilt: 'Stop', CameraId: joystickDemoCurrentCamControlId });
-    await xapi.Command.Camera.Ramp({ Zoom: 'Stop', CameraId: joystickDemoCurrentCamControlId });
-  } catch (err) {
-    const error = { Context: `Failed to stop camera ramp before reassigning control, CameraId: ${joystickDemoCurrentCamControlId}`, Error: err.message };
-    joystickDemoError(error, err);
+async function joystickDemoStopCameraMovement(continueOnFailure = false) {
+  const cameraId = joystickDemoCurrentCamControlId;
+  const stopCommands = ['Pan', 'Tilt', 'Zoom'].map(axis => ({
+    Axis: axis,
+    Run: () => xapi.Command.Camera.Ramp({ [axis]: 'Stop', CameraId: cameraId })
+  }));
+  const failures = (await Promise.all(stopCommands.map(async command => {
+    try {
+      await command.Run();
+      return null;
+    } catch (err) {
+      joystickDemoWarn(`Failed to stop ${command.Axis} on Camera ${cameraId}; continuing with the remaining axes:`, err);
+      return { Axis: command.Axis, Error: err };
+    }
+  }))).filter(Boolean);
+
+  if (failures.length && !continueOnFailure) {
+    const error = new Error(`Failed to stop camera movement on Camera ${cameraId}: ${failures.map(failure => failure.Axis).join(', ')}`);
+    joystickDemoError({ Context: 'Failed to stop camera ramp before reassigning control', Error: error.message }, failures[0].Error);
     throw error;
   }
 }
@@ -783,7 +839,10 @@ async function joystickDemoSwapMainAndPreviewCameras() {
     return;
   }
 
-  joystickDemoLog('Swapping Main and Preview sources');
+  const previousControlMethod = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
+  const controlledCamera = joystickDemoControlling === 'preview'
+    ? joystickDemoGetNameByConnectorId(joystickDemoCurrentPreviewVideo)
+    : joystickDemoGetNameByConnectorId(joystickDemoCurrentMainVideo);
 
   const tempVideo = joystickDemoCurrentMainVideo;
   joystickDemoCurrentMainVideo = joystickDemoCurrentPreviewVideo;
@@ -793,6 +852,10 @@ async function joystickDemoSwapMainAndPreviewCameras() {
   joystickDemoCurrentMainControl = joystickDemoCurrentPreviewControl;
   joystickDemoCurrentPreviewControl = tempControl;
 
+  joystickDemoControlling = joystickDemoControlling === 'main' ? 'preview' : 'main';
+  const nextControlMethod = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
+  joystickDemoLog(`Swapping Main and Preview sources; ${controlledCamera} remains controlled and moves from ${previousControlMethod} to ${nextControlMethod}`);
+
   try {
     await joystickDemoSetMainSourceVideo(joystickDemoCurrentMainVideo);
     await joystickDemoSetPreviewVideo(joystickDemoCurrentPreviewVideo);
@@ -800,7 +863,7 @@ async function joystickDemoSwapMainAndPreviewCameras() {
     joystickDemoError({ Context: `Failed to swap Main/Preview sources, Main: ${joystickDemoCurrentMainVideo}, Preview: ${joystickDemoCurrentPreviewVideo}`, Error: err.message }, err);
   }
 
-  // The controlled camera and Main/Preview control mode intentionally remain unchanged.
+  // The same physical camera remains controlled in its new Main/Preview role.
 }
 
 function joystickDemoHandlePrecisionMode(state) {
@@ -869,7 +932,7 @@ const joystickDemoControlManifest = {
     Handler: joystickDemoHandlePrecisionMode
   },
   SwapMainPreview: {
-    Description: 'Swaps the Main and Preview sources.',
+    Description: 'Swaps the Main and Preview sources while control follows the same physical camera into its new role.',
     Handler: joystickDemoHandleSwapMainPreview
   },
   ControlMain: {
@@ -926,19 +989,14 @@ function joystickDemoSelectSource(cameraButtonAction, buttonId) {
 async function resetJoystickDemo(end = false) {
   joystickDemoLog(end ? 'Resetting and ending Joystick Demo' : 'Resetting Joystick Demo');
 
-  joystickDemoResetTrackingState();
-
-  try {
-    await joystickDemoSetMainSourceVideo(joystickDemoCurrentMainVideo);
-    if (joystickDemoPreviewIsEnabled()) {
-      await joystickDemoSetPreviewVideo(joystickDemoCurrentPreviewVideo);
-    }
-    await joystickDemoSetCameraControlId(joystickDemoCurrentCamControlId);
-  } catch (err) {
-    joystickDemoError({ Context: 'Failed to restore default sources during reset', Error: err.message }, err);
-  }
-
   if (end) {
+    try {
+      await joystickDemoStopCameraMovement();
+    } catch (err) {
+      joystickDemoError({ Context: 'Failed to stop camera movement while disabling Joystick Controls', Error: err.message }, err);
+    }
+    joystickDemoResetInputState();
+
     if (joystickDemoPreviewIsEnabled()) {
       try {
         await xapi.Command.Video.Matrix.Reset({ Output: config.previewDisplay.output });
@@ -946,6 +1004,23 @@ async function resetJoystickDemo(end = false) {
         joystickDemoError({ Context: `Failed to reset Preview matrix output on end, Output: ${config.previewDisplay.output}`, Error: err.message }, err);
       }
     }
+    return;
+  }
+
+  joystickDemoResetTrackingState();
+
+  try {
+    if (config.joystick.SetDefaultCamera) {
+      await joystickDemoSetMainSourceVideo(joystickDemoCurrentMainVideo);
+    } else {
+      joystickDemoLog('Leaving the current Main source unchanged because config.joystick.SetDefaultCamera is false');
+    }
+    if (joystickDemoPreviewIsEnabled()) {
+      await joystickDemoSetPreviewVideo(joystickDemoCurrentPreviewVideo);
+    }
+    await joystickDemoSetCameraControlId(joystickDemoCurrentCamControlId);
+  } catch (err) {
+    joystickDemoError({ Context: 'Failed to reset joystick camera assignments', Error: err.message }, err);
   }
 }
 
@@ -1014,25 +1089,31 @@ async function joystickDemoRecoverFromSpeakerTrackActivation() {
   const lastMainVideo = joystickDemoCurrentMainVideo;
   joystickDemoWarn(`SpeakerTrack became active while Joystick Controls was enabled; restoring Main source ${lastMainVideo}`);
 
-  // Pause new input during the short recovery so all existing operator choices
-  // remain unchanged and cannot race the remembered Main-source restore.
+  // Stop accepting new events before any asynchronous recovery work. Main,
+  // Preview, the control method, handedness, and button mappings stay intact.
   joystickDemoEnabled = false;
   try {
-    await xapi.Command.UserInterface.Message.Alert.Display({
-      Duration: 10,
-      Title: 'Joystick Controls active',
-      Text: 'Disable Joystick Controls before enabling SpeakerTrack.'
-    });
-  } catch (err) {
-    joystickDemoWarn('Unable to display the Joystick Controls warning:', err);
-  }
+    await joystickDemoStopCameraMovement(true);
+    joystickDemoResetInputState();
 
-  try {
+    try {
+      await xapi.Command.UserInterface.Message.Alert.Display({
+        Duration: 10,
+        Title: 'Joystick Controls active',
+        Text: 'Disable Joystick Controls before enabling SpeakerTrack.'
+      });
+    } catch (err) {
+      joystickDemoWarn('Unable to display the Joystick Controls warning:', err);
+    }
+
     await joystickDemoDisableAutomaticCameraTracking();
     await joystickDemoSetMainSourceVideo(lastMainVideo);
     const controlMethod = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
     joystickDemoLog(`SpeakerTrack recovery complete -> Main: ${joystickDemoGetNameByConnectorId(lastMainVideo)}, Control method: ${controlMethod}`);
   } finally {
+    // Center/release events that arrived while input was paused were discarded,
+    // so clear transient state again immediately before reopening the input gate.
+    joystickDemoResetInputState();
     joystickDemoEnabled = true;
     await joystickDemoSyncControlPanel();
   }
@@ -1149,11 +1230,17 @@ function joystickDemoHandleControlPanelAction({ WidgetId, Type, Value }) {
 async function installJoystickDemoPanel() {
   await xapi.Command.UserInterface.Extensions.Panel.Save({ PanelId: joystickDemoPanelId }, joystickDemoPanelXml);
   joystickDemoLog(`Installed UI panel "${joystickDemoPanelId}"`);
+  try {
+    await fetchIconByUrl(joystickDemoPanelIconUrl, joystickDemoPanelId);
+  } catch (err) {
+    joystickDemoWarn({ Context: 'Failed to apply custom panel icon; retaining the default Sliders icon', IconUrl: joystickDemoPanelIconUrl, Error: err });
+  }
   await joystickDemoSyncControlPanel();
 }
 
 async function init() {
   try {
+    joystickDemoValidatePanelLocationConfig();
     joystickDemoValidatePreviewDisplayConfig();
     joystickDemoValidateCameraMotionConfig();
     joystickDemoValidateCameraConfig();

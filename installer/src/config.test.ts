@@ -31,6 +31,7 @@ describe('joystick configuration generation', () => {
     expect(config.controls.BASE_RIGHT_2).toBe('SelectCamera1');
     expect(config.cameras).toHaveLength(1);
     expect(config.cameras[0].ButtonAction).toBe('SelectCamera1');
+    expect(config.joystick.SetDefaultCamera).toBe(true);
     expect(config.joystick.DefaultCameraAction).toBe('SelectCamera1');
     expect(config.joystick.Camera).toEqual({
       PanTiltRampSpeed: 12,
@@ -40,6 +41,9 @@ describe('joystick configuration generation', () => {
     expect(config.previewDisplay).toEqual({
       mode: 'On',
       output: 2,
+    });
+    expect(config.userInterface).toEqual({
+      panelLocation: 'HomeScreenAndCallControls',
     });
     expect(config.documentation).toEqual({
       ProjectName: 'Joystick Camera Control',
@@ -87,6 +91,27 @@ describe('joystick configuration generation', () => {
     state.previewMode = 'Standby' as typeof state.previewMode;
 
     expect(validateConfiguratorState(state)).toContain('Preview display mode must be On or Off.');
+  });
+
+  it('supports exactly the four RoomOS panel locations', () => {
+    const state = createDefaultState();
+    const locations = [
+      'HomeScreen',
+      'CallControls',
+      'HomeScreenAndCallControls',
+      'ControlPanel',
+    ] as const;
+
+    for (const panelLocation of locations) {
+      state.panelLocation = panelLocation;
+      expect(validateConfiguratorState(state)).toEqual([]);
+      expect(buildMacroConfig(state).userInterface.panelLocation).toBe(panelLocation);
+    }
+
+    state.panelLocation = 'Everywhere' as typeof state.panelLocation;
+    expect(validateConfiguratorState(state)).toContain(
+      'Panel location must be one of: HomeScreen, CallControls, HomeScreenAndCallControls, ControlPanel.',
+    );
   });
 
   it('validates the independent RoomOS pan/tilt and zoom speed ranges', () => {
@@ -147,7 +172,9 @@ describe('joystick configuration generation', () => {
     const state = createDefaultState();
     state.projectName = 'Executive Briefing Controls';
     state.roomName = 'New York EBC';
+    state.panelLocation = 'ControlPanel';
     state.previewMode = 'Off';
+    state.setDefaultCamera = false;
     state.assignments[2] = builtInAssignment('SelfviewOff');
     const template = [
       'const unrelatedCode = () => "not evaluated";',
@@ -160,13 +187,57 @@ describe('joystick configuration generation', () => {
 
     expect(recovered.projectName).toBe('Executive Briefing Controls');
     expect(recovered.roomName).toBe('New York EBC');
+    expect(recovered.panelLocation).toBe('ControlPanel');
     expect(recovered.previewMode).toBe('Off');
+    expect(recovered.setDefaultCamera).toBe(false);
     expect(recovered.previewOutput).toBe(2);
     expect(recovered.panTiltRampSpeed).toBe(12);
     expect(recovered.zoomRampSpeed).toBe(12);
     expect(recovered.cameras.map((camera) => camera.Name)).toEqual(['Camera 1']);
     expect(recovered.assignments[2]).toBe(builtInAssignment('SelfviewOff'));
     expect(recovered.assignments[12]).toBe(cameraAssignment('camera-1'));
+  });
+
+  it('rejects a current named-control import with a missing logical ButtonId', () => {
+    const template = [
+      '/* JOYSTICK_CONFIG_START */',
+      'const config = {};',
+      '/* JOYSTICK_CONFIG_END */',
+    ].join('\n');
+    const source = generateConfiguredMacro(template, createDefaultState())
+      .replace(/^\s*STICK_SOUTH: "",\n/m, '');
+
+    expect(() => parseConfiguratorStateFromMacro(source)).toThrow(
+      'config.controls is missing required ButtonIds: "STICK_SOUTH".',
+    );
+  });
+
+  it('rejects an unknown logical ButtonId in a current named-control import', () => {
+    const template = [
+      '/* JOYSTICK_CONFIG_START */',
+      'const config = {};',
+      '/* JOYSTICK_CONFIG_END */',
+    ].join('\n');
+    const source = generateConfiguredMacro(template, createDefaultState())
+      .replace('controls: {', 'controls: {\n    STICK_SOTUH: "",');
+
+    expect(() => parseConfiguratorStateFromMacro(source)).toThrow(
+      'config.controls contains unknown ButtonIds: "STICK_SOTUH".',
+    );
+  });
+
+  it('accepts an explicitly present undefined value in a current named-control import', () => {
+    const template = [
+      '/* JOYSTICK_CONFIG_START */',
+      'const config = {};',
+      '/* JOYSTICK_CONFIG_END */',
+    ].join('\n');
+    const source = generateConfiguredMacro(template, createDefaultState())
+      .replace('STICK_SOUTH: ""', 'STICK_SOUTH: undefined');
+
+    const recovered = parseConfiguratorStateFromMacro(source);
+
+    expect(recovered.assignments[2]).toBe(builtInAssignment(''));
   });
 
   it('recovers the legacy single-quoted config format and defaults missing print metadata', () => {
@@ -198,6 +269,8 @@ describe('joystick configuration generation', () => {
 
     expect(recovered.projectName).toBe('Joystick Camera Control');
     expect(recovered.roomName).toBe('Room 1');
+    expect(recovered.panelLocation).toBe('HomeScreenAndCallControls');
+    expect(recovered.setDefaultCamera).toBe(true);
     expect(recovered.previewMode).toBe('On');
     expect(recovered.previewOutput).toBe(2);
     expect(recovered.panTiltRampSpeed).toBe(12);
@@ -205,6 +278,34 @@ describe('joystick configuration generation', () => {
     expect(recovered.cameras[0].Name).toBe('Legacy Camera');
     expect(recovered.assignments[12]).toBe(cameraAssignment('camera-1'));
     expect(recovered.assignments[2]).toBe(builtInAssignment(''));
+  });
+
+  it('rejects an unsupported panel location in an imported macro', () => {
+    const template = [
+      '/* JOYSTICK_CONFIG_START */',
+      'const config = {};',
+      '/* JOYSTICK_CONFIG_END */',
+    ].join('\n');
+    const source = generateConfiguredMacro(template, createDefaultState())
+      .replace('panelLocation: "HomeScreenAndCallControls"', 'panelLocation: "Everywhere"');
+
+    expect(() => parseConfiguratorStateFromMacro(source)).toThrow(
+      'config.userInterface.panelLocation must be one of: HomeScreen, CallControls, HomeScreenAndCallControls, ControlPanel.',
+    );
+  });
+
+  it('rejects a non-boolean SetDefaultCamera value in an imported macro', () => {
+    const template = [
+      '/* JOYSTICK_CONFIG_START */',
+      'const config = {};',
+      '/* JOYSTICK_CONFIG_END */',
+    ].join('\n');
+    const source = generateConfiguredMacro(template, createDefaultState())
+      .replace('SetDefaultCamera: true', 'SetDefaultCamera: "yes"');
+
+    expect(() => parseConfiguratorStateFromMacro(source)).toThrow(
+      'config.joystick.SetDefaultCamera must be true or false.',
+    );
   });
 
   it('rejects executable expressions in an imported configuration', () => {

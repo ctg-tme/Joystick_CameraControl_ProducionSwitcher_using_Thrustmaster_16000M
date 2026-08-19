@@ -46,7 +46,7 @@ export function normalizeSerial(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-export function connectToDevice(credentials: DeviceCredentials, timeoutMs = 20_000): Promise<DeviceXapi> {
+function connectToDevice(credentials: DeviceCredentials, timeoutMs = 20_000): Promise<DeviceXapi> {
   return new Promise((resolve, reject) => {
     const xapi = connect(`wss://${credentials.host}`, {
       username: credentials.username,
@@ -88,7 +88,7 @@ function scalarString(value: unknown): string {
   throw new Error('The device returned an unexpected status value.');
 }
 
-export async function verifyConnectedDevice(
+async function verifyConnectedDevice(
   xapi: DeviceXapi,
   expectedSerial: string,
 ): Promise<VerifiedDevice> {
@@ -131,7 +131,7 @@ function macroContentFromResponse(value: unknown, expectedName: string): string 
   return undefined;
 }
 
-export async function fetchMacroSource(xapi: DeviceXapi, macroName: string): Promise<string> {
+async function fetchMacroSource(xapi: DeviceXapi, macroName: string): Promise<string> {
   const result = await xapi.command('Macros Macro Get', { Name: macroName, Content: 'True' });
   const content = macroContentFromResponse(result, macroName);
   if (content === undefined) {
@@ -154,7 +154,7 @@ function eventMacroName(event: unknown): string | undefined {
   return typeof name === 'string' ? name : undefined;
 }
 
-export async function installAndVerify(
+async function installAndVerify(
   xapi: DeviceXapi,
   sources: InstallSources,
   onProgress: (message: string) => void,
@@ -224,4 +224,151 @@ export async function installAndVerify(
   } finally {
     stopFeedback();
   }
+}
+
+export interface DeviceInstallationState {
+  connected: boolean;
+  host?: string;
+  verifiedDevice?: VerifiedDevice;
+  installationResult?: InitializationResult;
+}
+
+/**
+ * Owns the verified RoomOS socket and the complete installation lifecycle.
+ * Every operation after connect uses the same verified session and expected
+ * serial number; install always performs its own final call-status recheck.
+ */
+export interface DeviceInstallationSession {
+  snapshot(): DeviceInstallationState;
+  connect(credentials: DeviceCredentials, expectedSerial: string): Promise<DeviceInstallationState>;
+  fetchInstalledMacro(macroName: string): Promise<string>;
+  recheck(): Promise<DeviceInstallationState>;
+  install(sources: InstallSources, onProgress: (message: string) => void): Promise<InitializationResult>;
+  disconnect(): void;
+}
+
+interface DeviceInstallationDependencies {
+  connect(credentials: DeviceCredentials): Promise<DeviceXapi>;
+  verify(xapi: DeviceXapi, expectedSerial: string): Promise<VerifiedDevice>;
+  fetch(xapi: DeviceXapi, macroName: string): Promise<string>;
+  install(
+    xapi: DeviceXapi,
+    sources: InstallSources,
+    onProgress: (message: string) => void,
+  ): Promise<InitializationResult>;
+}
+
+const defaultDeviceInstallationDependencies: DeviceInstallationDependencies = {
+  connect: connectToDevice,
+  verify: verifyConnectedDevice,
+  fetch: fetchMacroSource,
+  install: installAndVerify,
+};
+
+class RoomOsDeviceInstallationSession implements DeviceInstallationSession {
+  private device?: DeviceXapi;
+  private host?: string;
+  private expectedSerial?: string;
+  private verifiedDevice?: VerifiedDevice;
+  private installationResult?: InitializationResult;
+
+  constructor(private readonly dependencies: DeviceInstallationDependencies) {}
+
+  snapshot(): DeviceInstallationState {
+    return {
+      connected: this.device !== undefined,
+      host: this.host,
+      verifiedDevice: this.verifiedDevice,
+      installationResult: this.installationResult,
+    };
+  }
+
+  async connect(credentials: DeviceCredentials, expectedSerial: string): Promise<DeviceInstallationState> {
+    if (!credentials.username || !credentials.password) throw new Error('Enter administrator credentials.');
+    if (!expectedSerial.trim()) throw new Error('Enter the expected device serial number.');
+
+    const normalizedCredentials = {
+      ...credentials,
+      host: normalizeDeviceHost(credentials.host),
+    };
+    this.disconnect();
+
+    let candidate: DeviceXapi | undefined;
+    try {
+      candidate = await this.dependencies.connect(normalizedCredentials);
+      const verifiedDevice = await this.dependencies.verify(candidate, expectedSerial);
+      if (!verifiedDevice.serialMatches) {
+        throw new Error('The connected device did not match the expected serial number.');
+      }
+      this.device = candidate;
+      this.host = normalizedCredentials.host;
+      this.expectedSerial = expectedSerial;
+      this.verifiedDevice = verifiedDevice;
+      this.installationResult = undefined;
+      return this.snapshot();
+    } catch (error) {
+      candidate?.close();
+      this.clearState();
+      throw error;
+    }
+  }
+
+  async fetchInstalledMacro(macroName: string): Promise<string> {
+    return this.dependencies.fetch(this.requireDevice(), macroName);
+  }
+
+  async recheck(): Promise<DeviceInstallationState> {
+    const device = this.requireDevice();
+    if (!this.expectedSerial) throw new Error('Connect and verify the RoomOS device before continuing.');
+    this.verifiedDevice = await this.dependencies.verify(device, this.expectedSerial);
+    if (!this.verifiedDevice.serialMatches) {
+      throw new Error('The connected device no longer matches the expected serial number.');
+    }
+    return this.snapshot();
+  }
+
+  async install(
+    sources: InstallSources,
+    onProgress: (message: string) => void,
+  ): Promise<InitializationResult> {
+    this.installationResult = undefined;
+    const state = await this.recheck();
+    if ((state.verifiedDevice?.activeCalls ?? 0) > 0) {
+      throw new Error('A call started after the confirmation prompt. Installation remains blocked.');
+    }
+    this.installationResult = await this.dependencies.install(this.requireDevice(), sources, onProgress);
+    return this.installationResult;
+  }
+
+  disconnect(): void {
+    try {
+      this.device?.close();
+    } finally {
+      this.clearState();
+    }
+  }
+
+  private requireDevice(): DeviceXapi {
+    if (!this.device || !this.verifiedDevice?.serialMatches) {
+      throw new Error('Connect and verify the RoomOS device before continuing.');
+    }
+    return this.device;
+  }
+
+  private clearState(): void {
+    this.device = undefined;
+    this.host = undefined;
+    this.expectedSerial = undefined;
+    this.verifiedDevice = undefined;
+    this.installationResult = undefined;
+  }
+}
+
+export function createDeviceInstallationSession(
+  dependencies: Partial<DeviceInstallationDependencies> = {},
+): DeviceInstallationSession {
+  return new RoomOsDeviceInstallationSession({
+    ...defaultDeviceInstallationDependencies,
+    ...dependencies,
+  });
 }

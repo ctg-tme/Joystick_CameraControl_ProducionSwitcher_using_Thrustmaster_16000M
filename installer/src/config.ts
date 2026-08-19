@@ -1,5 +1,6 @@
 import {
   BUILT_IN_ACTIONS,
+  PANEL_LOCATIONS,
   PHYSICAL_BUTTONS,
   assignmentActionId,
   assignmentCameraId,
@@ -8,6 +9,7 @@ import {
   cameraButtonActions,
   logicalButtonId,
   type ConfiguratorState,
+  type PanelLocation,
   type PreviewDisplayMode,
 } from './model';
 
@@ -35,8 +37,12 @@ export interface GeneratedMacroConfig {
     mode: PreviewDisplayMode;
     output: number;
   };
+  userInterface: {
+    panelLocation: PanelLocation;
+  };
   joystick: {
     StartingHand: 'right' | 'left';
+    SetDefaultCamera: boolean;
     DefaultCameraAction: string;
     Camera: {
       PanTiltRampSpeed: number;
@@ -59,8 +65,14 @@ export function validateConfiguratorState(state: ConfiguratorState): string[] {
   if (!cameraIds.has(state.defaultCameraId)) {
     errors.push('Choose a configured default camera.');
   }
+  if (typeof state.setDefaultCamera !== 'boolean') {
+    errors.push('Set default camera must be enabled or disabled.');
+  }
   if (state.previewMode !== 'On' && state.previewMode !== 'Off') {
     errors.push('Preview display mode must be On or Off.');
+  }
+  if (!PANEL_LOCATIONS.includes(state.panelLocation)) {
+    errors.push(`Panel location must be one of: ${PANEL_LOCATIONS.join(', ')}.`);
   }
   if (!Number.isInteger(state.previewOutput) || state.previewOutput < 1 || state.previewOutput > 3) {
     errors.push('Preview output must be between 1 and 3.');
@@ -143,8 +155,12 @@ export function buildMacroConfig(state: ConfiguratorState): GeneratedMacroConfig
       mode: state.previewMode,
       output: state.previewOutput,
     },
+    userInterface: {
+      panelLocation: state.panelLocation,
+    },
     joystick: {
       StartingHand: state.handedness,
+      SetDefaultCamera: state.setDefaultCamera,
       DefaultCameraAction: defaultCameraAction,
       Camera: {
         PanTiltRampSpeed: state.panTiltRampSpeed,
@@ -378,6 +394,11 @@ function configNumber(value: unknown, label: string): number {
   return number;
 }
 
+function configBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${label} must be true or false.`);
+  return value;
+}
+
 function extractConfigObjectSource(macroSource: string): string {
   const start = macroSource.indexOf(CONFIG_START);
   const end = macroSource.indexOf(CONFIG_END);
@@ -433,6 +454,9 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
   if (handedness !== 'right' && handedness !== 'left') {
     throw new Error('StartingHand must be "right" or "left".');
   }
+  const setDefaultCamera = joystick.SetDefaultCamera === undefined
+    ? true
+    : configBoolean(joystick.SetDefaultCamera, 'config.joystick.SetDefaultCamera');
 
   const builtInIds = new Set(BUILT_IN_ACTIONS.map((action) => action.id));
   const assignments: Record<number, string> = {};
@@ -443,6 +467,20 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
     throw new Error('Legacy numbered controls must explicitly include all 16 physical buttons.');
   }
   const usesNumberedControls = numberedControlCount === PHYSICAL_BUTTONS.length;
+  if (!usesNumberedControls) {
+    const expectedButtonIds = PHYSICAL_BUTTONS.map((button) => logicalButtonId(button, handedness));
+    const missingButtonIds = expectedButtonIds.filter((buttonId) =>
+      !Object.prototype.hasOwnProperty.call(controls, buttonId)
+    );
+    if (missingButtonIds.length) {
+      throw new Error(`config.controls is missing required ButtonIds: ${missingButtonIds.map((buttonId) => `"${buttonId}"`).join(', ')}.`);
+    }
+    const expectedButtonIdSet = new Set(expectedButtonIds);
+    const unknownButtonIds = Object.keys(controls).filter((buttonId) => !expectedButtonIdSet.has(buttonId));
+    if (unknownButtonIds.length) {
+      throw new Error(`config.controls contains unknown ButtonIds: ${unknownButtonIds.map((buttonId) => `"${buttonId}"`).join(', ')}.`);
+    }
+  }
 
   for (const button of PHYSICAL_BUTTONS) {
     const controlKey = usesNumberedControls
@@ -467,6 +505,15 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
   const documentation = raw.documentation && typeof raw.documentation === 'object' && !Array.isArray(raw.documentation)
     ? raw.documentation as Record<string, unknown>
     : {};
+  let panelLocation: PanelLocation = 'HomeScreenAndCallControls';
+  if (raw.userInterface !== undefined) {
+    const userInterface = configRecord(raw.userInterface, 'config.userInterface');
+    const parsedPanelLocation = configString(userInterface.panelLocation, 'config.userInterface.panelLocation');
+    if (!PANEL_LOCATIONS.includes(parsedPanelLocation as PanelLocation)) {
+      throw new Error(`config.userInterface.panelLocation must be one of: ${PANEL_LOCATIONS.join(', ')}.`);
+    }
+    panelLocation = parsedPanelLocation as PanelLocation;
+  }
   let previewMode: PreviewDisplayMode;
   let previewOutput: number;
   if (raw.previewDisplay !== undefined) {
@@ -490,6 +537,8 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
       ? documentation.RoomName
       : 'Room 1',
     handedness,
+    setDefaultCamera,
+    panelLocation,
     previewMode,
     previewOutput,
     panTiltRampSpeed,

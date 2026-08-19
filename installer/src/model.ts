@@ -1,5 +1,12 @@
 export type Handedness = 'right' | 'left';
 export type PreviewDisplayMode = 'On' | 'Off';
+export const PANEL_LOCATIONS = [
+  'HomeScreen',
+  'CallControls',
+  'HomeScreenAndCallControls',
+  'ControlPanel',
+] as const;
+export type PanelLocation = typeof PANEL_LOCATIONS[number];
 export type ActionCategory = 'unused' | 'motion' | 'main' | 'preview' | 'selfview' | 'camera';
 
 export interface BuiltInAction {
@@ -29,6 +36,8 @@ export interface ConfiguratorState {
   projectName: string;
   roomName: string;
   handedness: Handedness;
+  setDefaultCamera: boolean;
+  panelLocation: PanelLocation;
   previewMode: PreviewDisplayMode;
   previewOutput: number;
   panTiltRampSpeed: number;
@@ -55,7 +64,7 @@ export const BUILT_IN_ACTIONS: BuiltInAction[] = [
   {
     id: 'SwapMainPreview',
     label: 'Swap Main and Preview',
-    description: 'Swaps the Main and Preview camera sources.',
+    description: 'Swaps Main and Preview while joystick control follows the same physical camera into its new role.',
     category: 'motion',
   },
   {
@@ -200,6 +209,8 @@ export function createDefaultState(): ConfiguratorState {
     projectName: 'Joystick Camera Control',
     roomName: 'Room 1',
     handedness: 'right',
+    setDefaultCamera: true,
+    panelLocation: 'HomeScreenAndCallControls',
     previewMode: 'On',
     previewOutput: 2,
     panTiltRampSpeed: 12,

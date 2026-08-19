@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 describe('configurator workflow presentation', () => {
   it('renders the requested four-page order with return navigation', async () => {
-    const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
+    const [source, navigationSource] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./workflow.ts', import.meta.url), 'utf8'),
+    ]);
     const pageNames = [
       'Introduction',
       'Macro Settings',
@@ -11,12 +14,12 @@ describe('configurator workflow presentation', () => {
       'Review and Installation',
     ];
 
-    const positions = pageNames.map((pageName) => source.indexOf(`title: '${pageName}'`));
+    const positions = pageNames.map((pageName) => navigationSource.indexOf(`title: '${pageName}'`));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
     expect(source).toContain('data-workflow-step');
-    expect(source).toContain('window.history.pushState');
-    expect(source).toContain("window.addEventListener('popstate'");
+    expect(navigationSource).toContain('this.browserWindow.history.pushState');
+    expect(navigationSource).toContain("this.browserWindow.addEventListener('popstate'");
   });
 
   it('keeps stable page numbers in the workflow rail without completion marks', async () => {
@@ -31,6 +34,18 @@ describe('configurator workflow presentation', () => {
     expect(styles).not.toContain('.workflow-step.complete');
   });
 
+  it('keeps the product and joystick model left-aligned in the shared header', async () => {
+    const [source, styles] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(source).toContain("const JOYSTICK_MODEL = 'Thrustmaster T.16000M';");
+    expect(source).toContain('<span class="wordmark-copy"><strong>Joystick Camera Control</strong><small>${JOYSTICK_MODEL}</small></span>');
+    expect(styles).toMatch(/\.wordmark \{[^}]*justify-content: flex-start;[^}]*text-align: left;/s);
+    expect(styles).toMatch(/\.wordmark-copy \{[^}]*justify-items: start;[^}]*text-align: left;/s);
+  });
+
   it('offers all three starting paths on Introduction without a duplicate footer CTA', async () => {
     const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
 
@@ -39,7 +54,7 @@ describe('configurator workflow presentation', () => {
     expect(source).toContain('<strong>Fetch Macro from Device</strong>');
     expect(source).toContain("this.openDeviceConnection(true);");
     expect(source).not.toContain('About this project');
-    expect(source).toContain("if (this.currentStep === 1) return '';");
+    expect(source).toContain("if (currentStep === 1) return '';");
   });
 
   it('places support, hardware, slider, and license warnings before hardware prerequisites', async () => {
@@ -65,7 +80,7 @@ describe('configurator workflow presentation', () => {
 
     expect(source).toContain('id="device-connection-dialog"');
     expect(source).toContain('this.deviceConnectionOpen = true;');
-    expect(source).toContain("this.device ? 'data-open-install-confirmation' : 'data-open-device-connection'");
+    expect(source).toContain("session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'");
     expect(source).not.toContain('this.navigateToStep(4);');
   });
 
@@ -90,13 +105,27 @@ describe('configurator workflow presentation', () => {
     expect(source).not.toMatch(/<input[^>]+data-setting="(?:previewOutput|panTiltRampSpeed|zoomRampSpeed|slowModeDivisor)"/);
   });
 
-  it('starts every page load at Introduction and warns before discarding workflow progress', async () => {
-    const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
+  it('offers every supported Joystick Controls panel location', async () => {
+    const [appSource, modelSource] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./model.ts', import.meta.url), 'utf8'),
+    ]);
 
-    expect(source).toContain('private currentStep: WorkflowStep = 1;');
+    expect(appSource).toContain('<select data-setting="panelLocation">');
+    expect(appSource).toContain('PANEL_LOCATIONS.map');
+    expect(modelSource).toContain("'HomeScreen'");
+    expect(modelSource).toContain("'CallControls'");
+    expect(modelSource).toContain("'HomeScreenAndCallControls'");
+    expect(modelSource).toContain("'ControlPanel'");
+  });
+
+  it('starts every page load at Introduction and warns before discarding workflow progress', async () => {
+    const source = await readFile(new URL('./workflow.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain('private step: WorkflowStep = 1;');
     expect(source).toContain("const initialHash = `#${WORKFLOW_STEPS[0].id}`;");
-    expect(source).toContain("window.history.replaceState({ step: 1 }, '', initialHash);");
-    expect(source).toContain("window.addEventListener('beforeunload'");
+    expect(source).toContain("this.browserWindow.history.replaceState({ step: 1 }, '', initialHash);");
+    expect(source).toContain("this.browserWindow.addEventListener('beforeunload'");
     expect(source).toContain('Refreshing restarts the installer from the Introduction page.');
   });
 
@@ -129,7 +158,8 @@ describe('configurator workflow presentation', () => {
 
     expect(source).toContain("this.state.previewMode === 'Off' && isPreviewDependentAssignment(assignment)");
     expect(source).toContain('Preview display is Off');
-    expect(source).toContain('The joystick will control the Main camera instead.');
+    expect(source).toContain('This Control Preview action will be ignored while Preview Display mode is Off.');
+    expect(source).not.toContain('The joystick will control the Main camera instead.');
     expect(source).toContain('This button action will be ignored.');
     expect(source).toContain('This warning appears because Preview display mode is set to Off in Macro Settings.');
     expect(source).toContain('aria-label="Why Button ${button.number} has a Preview warning"');
@@ -141,18 +171,24 @@ describe('configurator workflow presentation', () => {
     expect(styles).toContain('border-left: 4px solid var(--warning-border-default);');
   });
 
-  it('changes install copy after connection and confirms against refreshed call status', async () => {
-    const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
+  it('keeps install versus update tied to the selected workflow and confirms connected updates against refreshed call status', async () => {
+    const [source, deviceSource] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./device.ts', import.meta.url), 'utf8'),
+    ]);
 
     expect(source).toContain('<h2>Download Macro</h2>');
-    expect(source).toContain("this.device ? 'Update Macro' : 'Install Macro'");
+    expect(source).toContain("const deviceAction = isUpdate ? 'Update Macro' : 'Install Macro';");
+    expect(source).toContain("private installationMode: InstallationMode = 'install';");
+    expect(source).toContain("this.installationMode = 'update';");
+    expect(source).toContain("if (actionAfterConnect === 'install') await this.installDevice();");
     expect(source).toContain('<h2>Download User Manual</h2>');
     expect(source).toContain('<h2>Config object</h2>');
     expect(source).not.toContain('id="copy-config"');
     expect(source).toContain('id="install-confirm-dialog"');
     expect(source).toContain('Device is currently on a call');
-    expect(source).toContain('await verifyConnectedDevice(this.device, this.expectedSerial)');
-    expect(source).toContain('A call started after the confirmation prompt. Installation remains blocked.');
+    expect(source).toContain('await this.deviceSession.recheck()');
+    expect(deviceSource).toContain('A call started after the confirmation prompt. Installation remains blocked.');
   });
 
   it('keeps live install and update progress visible in a modal through the final outcome', async () => {
@@ -171,16 +207,18 @@ describe('configurator workflow presentation', () => {
     expect(styles).toContain('@keyframes installation-progress-spin');
   });
 
-  it('offers all three theme preferences and packages the user manual', async () => {
-    const [appSource, assetScript] = await Promise.all([
+  it('offers all three theme preferences and generates the configured user manual', async () => {
+    const [appSource, manualSource] = await Promise.all([
       readFile(new URL('./app.ts', import.meta.url), 'utf8'),
-      readFile(new URL('../scripts/prepare-assets.mjs', import.meta.url), 'utf8'),
+      readFile(new URL('./manual.ts', import.meta.url), 'utf8'),
     ]);
 
     expect(appSource).toContain('>System</option>');
     expect(appSource).toContain('>Light</option>');
     expect(appSource).toContain('>Dark</option>');
-    expect(assetScript).toContain("'Joystick_CameraControl_User_Manual.html'");
+    expect(appSource).toContain('generateConfiguredUserManual(this.state)');
+    expect(manualSource).toContain('export function generateConfiguredUserManual(state: ConfiguratorState)');
+    expect(manualSource).toContain('joystickImageDataUrl');
   });
 
   it('keeps About focused on current project details', async () => {
@@ -194,6 +232,7 @@ describe('configurator workflow presentation', () => {
     expect(aboutSource).toContain('<dt>Macro version</dt>');
     expect(aboutSource).toContain('<dt>Macro file</dt>');
     expect(aboutSource).toContain('<dt>Camera sources</dt>');
+    expect(aboutSource).toContain('<p class="about-product-model">${JOYSTICK_MODEL}</p>');
     expect(aboutSource).toContain('Project repository');
     expect(aboutSource).not.toContain('BUILT_IN_ACTIONS');
     expect(aboutSource).not.toContain('this.state.cameras');
@@ -238,6 +277,8 @@ describe('configurator workflow presentation', () => {
       'projectName',
       'roomName',
       'handedness',
+      'setDefaultCamera',
+      'panelLocation',
       'previewMode',
       'previewOutput',
       'panTiltRampSpeed',
