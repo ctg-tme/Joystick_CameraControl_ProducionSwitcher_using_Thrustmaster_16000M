@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Joystick Camera Control</title>
+  <desc id="desc">A bold RoomOS-style joystick with a tilted stick, ball grip, and control button.</desc>
+  <defs>
+    <mask id="control-cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="white"/>
+      <circle cx="394" cy="390" r="27" fill="black"/>
+    </mask>
+  </defs>
+  <g fill="#fff" mask="url(#control-cutouts)">
+    <!-- A low, wide control deck avoids the torso-like reading of the previous silhouette. -->
+    <path transform="translate(5.12 0) scale(.98 1)" d="M104 300h304c22 0 39 15 46 35l28 85c11 35-15 62-51 62H81c-36 0-62-27-51-62l28-85c7-20 24-35 46-35Z"/>
+    <!-- The exaggerated diagonal shaft and ball grip read immediately as a joystick. -->
+    <path d="m216 332 60-193c5-17 23-27 40-22l17 5c17 5 27 23 22 40l-52 170h-87Z"/>
+    <circle cx="330" cy="92" r="62"/>
+  </g>
+</svg>

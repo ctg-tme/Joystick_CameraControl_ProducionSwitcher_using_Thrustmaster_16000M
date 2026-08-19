@@ -4,7 +4,18 @@ This Vite application has three jobs:
 
 1. configure one to four cameras and all 16 physical buttons;
 2. recover, generate, or directly install a configured RoomOS macro;
-3. print the same configuration as color, single-page operator documentation.
+3. provide the illustrated user manual as a standalone download.
+
+The interface is organized as Introduction, Macro Settings, Button Assignments,
+and Review and Installation. Introduction offers a fresh configuration, local
+macro import, or a verified device fetch. Macro Settings includes camera sources,
+independent PAN/TILT and zoom ramp speeds, and their shared Precision Mode divisor.
+The Button Assignments page reads left to right while its complete action key
+opens in a modal. The workflow rail and browser history allow any visited page to
+be revisited without losing the in-session configuration. Refreshing warns the
+operator and starts again at Introduction. Device connection and verification
+always open in a modal, preserving whichever workflow page the operator is
+currently using.
 
 ## Local development
 
@@ -26,6 +37,7 @@ npm run build
 
 - validates the macro configuration markers and JavaScript syntax;
 - copies the current macro into ignored `public/assets`;
+- copies the standalone user manual into ignored `public/assets`;
 - extracts the joystick diagram from the existing guide;
 - records the macro hash and external dependency URL in `source-manifest.json`.
 
@@ -37,11 +49,17 @@ The page connects directly from the browser to the RoomOS device over `wss://` u
 
 Before installation, the page:
 
+- opens the connection form in a modal without redirecting or changing the current workflow page;
 - requires an expected device serial number and compares it without displaying the observed serial;
-- blocks installation when the device reports an active call;
-- requires acknowledgement that the macro runtime restart affects every active macro.
+- opens a confirmation prompt and refreshes device call status immediately before any write;
+- blocks confirmation when the device reports an active call;
+- keeps every install or update step visible in a progress modal through readiness, timeout, or failure;
+- warns that the macro runtime restart affects every active macro.
 
 After the same verification, the operator may fetch the installed solution macro with a read-only `Macros Macro Get` command. Local uploads and fetched macros are parsed as data without executing their source.
+
+The browser remembers only the device address and administrator username between
+page loads. Passwords and expected serial numbers are not cached.
 
 The install sequence is:
 
@@ -63,4 +81,5 @@ The Vite base is relative so the built app works from a repository subpath. The 
 The page uses a framework-free adaptation of Cisco's Magnetic Common Design
 System. The generated light-theme variables are vendored unchanged under
 `src/vendor/magnetic`, with their upstream MIT license and source revision.
-Local component and print styling in `src/styles.css` consumes those tokens.
+Local component and print styling in `src/styles.css` consumes those tokens and
+adds a persisted System, Light, and Dark selector.

@@ -18,8 +18,8 @@ or implied.
  *                          Cisco Systems Inc
  *
  * Date Created:            July 22, 2026
- * Revised:                 July 23, 2026
- * Version:                 1.8.0
+ * Revised:                 August 19, 2026
+ * Version:                 1.9.7
  *
  * Description:             Standalone Thrustmaster T.16000M camera controller
  *                          and Main/Preview production switcher for RoomOS.
@@ -44,7 +44,9 @@ import { ThrustMaster16000M_JoyStick } from './Thrustmaster_16000M-Class';
 const config = {
   documentation: {
     ProjectName: 'Joystick Camera Control',
-    RoomName: 'Room 1'
+    RoomName: 'Room 1',
+    InstallerUrl: 'https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/',
+    RepositoryUrl: 'https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M'
   },
   previewDisplay: {
     mode: 'On',
@@ -54,31 +56,32 @@ const config = {
     StartingHand: 'right',
     DefaultCameraAction: 'SelectCamera1',
     Camera: {
-      BaseRampSpeed: 12,
+      PanTiltRampSpeed: 12,
+      ZoomRampSpeed: 12,
       SlowModeDivisor: 2
     }
   },
-  // Physical buttons are listed in printed button-number order. Assign a
-  // built-in action or camera ButtonAction, or leave the value blank for no
-  // action. null and undefined are also accepted for intentionally unused
-  // buttons. Multiple buttons may invoke the same built-in action.
+  // Named Thrustmaster button IDs are listed in printed button order for the
+  // configured StartingHand. Assign a built-in action or camera ButtonAction,
+  // or leave the value blank for no action. null and undefined are also
+  // accepted for intentionally unused buttons.
   controls: {
-    1: 'PrecisionMode',
-    2: '',
-    3: 'SwapMainPreview',
-    4: 'SwapMainPreview',
-    5: 'ControlMain',
-    6: 'SelfviewWindowed',
-    7: 'SelfviewFullscreen',
-    8: '',
-    9: 'SelfviewOff',
-    10: 'ControlPreview',
-    11: 'SelectCamera2',
-    12: 'SelectCamera1',
-    13: '',
-    14: '',
-    15: 'SelectCamera3',
-    16: 'SelectCamera4'
+    STICK_TRIGGER: 'PrecisionMode',
+    STICK_SOUTH: '',
+    STICK_EAST: 'SwapMainPreview',
+    STICK_WEST: 'SwapMainPreview',
+    BASE_LEFT_1: 'ControlMain',
+    BASE_LEFT_2: 'SelfviewWindowed',
+    BASE_LEFT_3: 'SelfviewFullscreen',
+    BASE_LEFT_6: '',
+    BASE_LEFT_5: 'SelfviewOff',
+    BASE_LEFT_4: 'ControlPreview',
+    BASE_RIGHT_3: 'SelectCamera2',
+    BASE_RIGHT_2: 'SelectCamera1',
+    BASE_RIGHT_1: '',
+    BASE_RIGHT_4: '',
+    BASE_RIGHT_5: 'SelectCamera3',
+    BASE_RIGHT_6: 'SelectCamera4'
   },
   // Configure one to four cameras. Each ButtonAction must appear exactly once in
   // controls so every camera has one button binding.
@@ -112,8 +115,14 @@ const config = {
 /* JOYSTICK_CONFIG_END */
 
 const joystickDemoPanelId = 'ic26_avDemo~joy';
+const joystickDemoControlsPageId = joystickDemoPanelId;
+const joystickDemoStatusPageId = `${joystickDemoPanelId}~status`;
 const joystickDemoEnabledWidgetId = `${joystickDemoPanelId}~enabled`;
 const joystickDemoHandednessWidgetId = `${joystickDemoPanelId}~handedness`;
+const joystickDemoEnabledStatusWidgetId = `${joystickDemoPanelId}~statusEnabled`;
+const joystickDemoControlMethodStatusWidgetId = `${joystickDemoPanelId}~statusMethod`;
+const joystickDemoMainStatusWidgetId = `${joystickDemoPanelId}~statusMain`;
+const joystickDemoPreviewStatusWidgetId = `${joystickDemoPanelId}~statusPreview`;
 
 const joystickDemoPanelXml = `<Extensions>
   <Version>1.11</Version>
@@ -130,7 +139,7 @@ const joystickDemoPanelXml = `<Extensions>
         <Name>Joystick controls</Name>
         <Widget>
           <WidgetId>${joystickDemoPanelId}~enabledHelp</WidgetId>
-          <Name>Enable joystick camera and switching controls. Closing this panel does not change the selection.</Name>
+          <Name>Enable manual joystick camera and switching controls. Enabling sets SpeakerTrack to Manual and turns off tracking modes; disabling does not restore them.</Name>
           <Type>Text</Type>
           <Options>size=4;fontSize=small;align=left</Options>
         </Widget>
@@ -180,7 +189,48 @@ const joystickDemoPanelXml = `<Extensions>
           </ValueSpace>
         </Widget>
       </Row>
-      <PageId>${joystickDemoPanelId}</PageId>
+      <PageId>${joystickDemoControlsPageId}</PageId>
+      <Options>hideRowNames=1</Options>
+    </Page>
+    <Page>
+      <Name>Status</Name>
+      <Row>
+        <Name>Joystick controls</Name>
+        <Widget>
+          <WidgetId>${joystickDemoEnabledStatusWidgetId}</WidgetId>
+          <Name>Joystick controls status is loading.</Name>
+          <Type>Text</Type>
+          <Options>size=4;fontSize=normal;align=left</Options>
+        </Widget>
+      </Row>
+      <Row>
+        <Name>Control method</Name>
+        <Widget>
+          <WidgetId>${joystickDemoControlMethodStatusWidgetId}</WidgetId>
+          <Name>Control method is loading.</Name>
+          <Type>Text</Type>
+          <Options>size=4;fontSize=normal;align=left</Options>
+        </Widget>
+      </Row>
+      <Row>
+        <Name>Main</Name>
+        <Widget>
+          <WidgetId>${joystickDemoMainStatusWidgetId}</WidgetId>
+          <Name>Main camera is loading.</Name>
+          <Type>Text</Type>
+          <Options>size=4;fontSize=normal;align=left</Options>
+        </Widget>
+      </Row>
+      <Row>
+        <Name>Preview</Name>
+        <Widget>
+          <WidgetId>${joystickDemoPreviewStatusWidgetId}</WidgetId>
+          <Name>Preview camera is loading.</Name>
+          <Type>Text</Type>
+          <Options>size=4;fontSize=normal;align=left</Options>
+        </Widget>
+      </Row>
+      <PageId>${joystickDemoStatusPageId}</PageId>
       <Options>hideRowNames=1</Options>
     </Page>
   </Panel>
@@ -189,8 +239,7 @@ const joystickDemoPanelXml = `<Extensions>
 
 /**
  * Physical guide-button order and its handedness-dependent class identifiers.
- * The public configuration uses only Number; class IDs remain an implementation
- * detail resolved from StartingHand.
+ * The named IDs are the public config.controls keys.
  */
 const joystickDemoPhysicalButtonManifest = [
   { Number: 1, RightButtonId: 'STICK_TRIGGER', LeftButtonId: 'STICK_TRIGGER' },
@@ -235,6 +284,7 @@ let joystickDemoHandedness = config.joystick.StartingHand;
 // Master switch to enable/disable all joystick features
 let joystickDemoEnabled = false;
 let joystickDemoControlPanelAction = Promise.resolve();
+let joystickDemoSpeakerTrackRecoveryQueued = false;
 
 // Trackers to prevent command spamming
 let joystickDemoLastPanTiltSent = { Tilt: 'Stop', Pan: 'Stop', Speed: 0 };
@@ -251,6 +301,22 @@ function joystickDemoLog(...args) {
 }
 
 /**
+ * Logs high-frequency movement detail at debug level.
+ * @param {...*} args - The values to log.
+ */
+function joystickDemoDebug(...args) {
+  console.debug('[Joystick_Demo]:', ...args);
+}
+
+/**
+ * Logs a warning to the console, prefixed for the Joystick Demo for clarity in device logs.
+ * @param {...*} args - The values to log.
+ */
+function joystickDemoWarn(...args) {
+  console.warn('[Joystick_Demo]:', ...args);
+}
+
+/**
  * Logs an error to the console, prefixed for the Joystick Demo for clarity in device logs.
  * @param {...*} args - The values to log.
  */
@@ -259,12 +325,13 @@ function joystickDemoError(...args) {
 }
 
 /**
- * Resolves a physical button number to the class ID for the configured hand.
+ * Resolves a physical button to the class ID for the requested hand.
  * @param {{ RightButtonId: string, LeftButtonId: string }} button
+ * @param {'left' | 'right'} handedness
  * @returns {string}
  */
-function joystickDemoResolveButtonId(button) {
-  return joystickDemoHandedness === 'left'
+function joystickDemoResolveButtonId(button, handedness = joystickDemoHandedness) {
+  return handedness === 'left'
     ? button.LeftButtonId
     : button.RightButtonId;
 }
@@ -297,6 +364,26 @@ function joystickDemoValidatePreviewDisplayConfig() {
   }
   if (!Number.isInteger(previewDisplay.output) || previewDisplay.output < 1) {
     throw new Error('config.previewDisplay.output must be a positive whole number');
+  }
+}
+
+/**
+ * Validates the independent RoomOS ramp-speed ranges and shared Precision Mode divisor.
+ */
+function joystickDemoValidateCameraMotionConfig() {
+  const camera = config.joystick.Camera;
+
+  if (!camera || typeof camera !== 'object' || Array.isArray(camera)) {
+    throw new Error('config.joystick.Camera must be an object');
+  }
+  if (!Number.isInteger(camera.PanTiltRampSpeed) || camera.PanTiltRampSpeed < 1 || camera.PanTiltRampSpeed > 24) {
+    throw new Error('config.joystick.Camera.PanTiltRampSpeed must be a whole number between 1 and 24');
+  }
+  if (!Number.isInteger(camera.ZoomRampSpeed) || camera.ZoomRampSpeed < 1 || camera.ZoomRampSpeed > 15) {
+    throw new Error('config.joystick.Camera.ZoomRampSpeed must be a whole number between 1 and 15');
+  }
+  if (!Number.isFinite(camera.SlowModeDivisor) || camera.SlowModeDivisor <= 0) {
+    throw new Error('config.joystick.Camera.SlowModeDivisor must be greater than zero');
   }
 }
 
@@ -363,38 +450,33 @@ function joystickDemoValidateControlConfig() {
     throw new Error('config.joystick.StartingHand must be "left" or "right"');
   }
   if (!controls || typeof controls !== 'object' || Array.isArray(controls)) {
-    throw new Error('config.controls must be an object keyed by physical button number');
+    throw new Error('config.controls must be an object keyed by named joystick button ID');
   }
 
   const buttonActions = Object.values(controls);
-  const expectedButtonNumbers = joystickDemoPhysicalButtonManifest.map(button => String(button.Number));
+  const expectedButtonIds = joystickDemoController.buttons;
 
-  for (const button of joystickDemoPhysicalButtonManifest) {
-    if (!Object.prototype.hasOwnProperty.call(controls, button.Number)) {
-      throw new Error(`config.controls must explicitly include physical button ${button.Number}`);
-    }
-
-    const buttonId = joystickDemoResolveButtonId(button);
-    if (!joystickDemoController.buttons.includes(buttonId)) {
-      throw new Error(`Physical button ${button.Number} resolves to unsupported ButtonId "${buttonId}"`);
+  for (const buttonId of expectedButtonIds) {
+    if (!Object.prototype.hasOwnProperty.call(controls, buttonId)) {
+      throw new Error(`config.controls must explicitly include ButtonId "${buttonId}"`);
     }
   }
 
-  for (const [buttonNumber, buttonAction] of Object.entries(controls)) {
-    if (!expectedButtonNumbers.includes(buttonNumber)) {
-      throw new Error(`Unknown physical button number "${buttonNumber}" in config.controls`);
+  for (const [buttonId, buttonAction] of Object.entries(controls)) {
+    if (!expectedButtonIds.includes(buttonId)) {
+      throw new Error(`Unknown ButtonId "${buttonId}" in config.controls`);
     }
     if (joystickDemoHasNoButtonAction(buttonAction)) {
       continue;
     }
     if (typeof buttonAction !== 'string') {
-      throw new Error(`Physical button ${buttonNumber} must use a ButtonAction string, blank, null, or undefined`);
+      throw new Error(`ButtonId "${buttonId}" must use a ButtonAction string, blank, null, or undefined`);
     }
 
     const isControlAction = Object.prototype.hasOwnProperty.call(joystickDemoControlManifest, buttonAction);
     const isCamera = Object.prototype.hasOwnProperty.call(joystickDemoCamerasByButtonAction, buttonAction);
     if (!isControlAction && !isCamera) {
-      throw new Error(`Unknown ButtonAction "${buttonAction}" assigned to physical button ${buttonNumber}`);
+      throw new Error(`Unknown ButtonAction "${buttonAction}" assigned to ButtonId "${buttonId}"`);
     }
   }
 
@@ -412,13 +494,19 @@ function joystickDemoValidateControlConfig() {
 function joystickDemoRegisterButtons() {
   for (const button of joystickDemoPhysicalButtonManifest) {
     const buttonId = joystickDemoResolveButtonId(button);
-    const buttonAction = config.controls[button.Number];
+    const configuredButtonId = joystickDemoResolveButtonId(button, config.joystick.StartingHand);
+    const buttonAction = config.controls[configuredButtonId];
     const noAction = joystickDemoHasNoButtonAction(buttonAction);
     const controlDefinition = !noAction && Object.prototype.hasOwnProperty.call(joystickDemoControlManifest, buttonAction)
       ? joystickDemoControlManifest[buttonAction]
       : null;
 
     joystickDemoController.button.on(buttonId, state => {
+      if (!noAction && (state === 'Released' || buttonAction === 'PrecisionMode')) {
+        const camera = joystickDemoCamerasByButtonAction[buttonAction];
+        const cameraDetail = camera ? `, Camera: ${camera.Name}` : '';
+        joystickDemoLog(`Button selection -> ButtonId: ${buttonId}, ButtonAction: ${buttonAction}, State: ${state}${cameraDetail}`);
+      }
       if (controlDefinition?.Handler) {
         controlDefinition.Handler(state, buttonId);
       } else if (!noAction && state === 'Released') {
@@ -490,7 +578,7 @@ function joystickDemoHandlePanTilt(speed) {
 
     if (shouldSend) {
       joystickDemoLastPanTiltSent = { Tilt: currentTilt, Pan: currentPan, Speed: speed };
-      joystickDemoLog(`Pan/Tilt ramp on Camera ${joystickDemoCurrentCamControlId} -> Pan: ${currentPan}, Tilt: ${currentTilt}, Speed: ${speed}`);
+      joystickDemoDebug(`Pan/Tilt ramp on Camera ${joystickDemoCurrentCamControlId} -> Pan: ${currentPan}, Tilt: ${currentTilt}, Speed: ${speed}`);
       xapi.Command.Camera.Ramp(rampParams).catch(err => joystickDemoError('Pan/Tilt ramp failed:', err));
     }
   }
@@ -504,11 +592,8 @@ function joystickDemoHandleZoom(speed) {
   // Map: Negative values = In, Positive values = Out
   const currentZoom = joystickDemoAxisState.HAT0Y <= -5 ? 'In' : (joystickDemoAxisState.HAT0Y >= 5 ? 'Out' : 'Stop');
 
-  // Zoom speed max on Cisco is 15. Cap it just in case.
-  const zoomSpeed = Math.min(15, speed);
-
   const directionChanged = (currentZoom !== joystickDemoLastZoomSent.Zoom);
-  const speedChanged = (zoomSpeed !== joystickDemoLastZoomSent.Speed && currentZoom !== 'Stop');
+  const speedChanged = (speed !== joystickDemoLastZoomSent.Speed && currentZoom !== 'Stop');
 
   if (directionChanged || speedChanged) {
     const zoomParams = {
@@ -517,24 +602,24 @@ function joystickDemoHandleZoom(speed) {
     };
 
     if (currentZoom !== 'Stop') {
-      zoomParams.ZoomSpeed = zoomSpeed;
+      zoomParams.ZoomSpeed = speed;
     }
 
-    joystickDemoLastZoomSent = { Zoom: currentZoom, Speed: zoomSpeed };
+    joystickDemoLastZoomSent = { Zoom: currentZoom, Speed: speed };
 
-    joystickDemoLog(`Zoom ramp on Camera ${joystickDemoCurrentCamControlId} -> Zoom: ${currentZoom}, Speed: ${zoomSpeed}`);
+    joystickDemoDebug(`Zoom ramp on Camera ${joystickDemoCurrentCamControlId} -> Zoom: ${currentZoom}, Speed: ${speed}`);
     xapi.Command.Camera.Ramp(zoomParams).catch(err => joystickDemoError('Zoom ramp failed:', err));
   }
 }
 
 function joystickDemoUpdateCameraRamp() {
-  const speed = joystickDemoTriggerState
-    ? Math.max(1, Math.round(config.joystick.Camera.BaseRampSpeed / config.joystick.Camera.SlowModeDivisor))
-    : config.joystick.Camera.BaseRampSpeed;
+  const divisor = joystickDemoTriggerState ? config.joystick.Camera.SlowModeDivisor : 1;
+  const panTiltSpeed = Math.max(1, Math.round(config.joystick.Camera.PanTiltRampSpeed / divisor));
+  const zoomSpeed = Math.max(1, Math.round(config.joystick.Camera.ZoomRampSpeed / divisor));
 
-  joystickDemoLog(`Updating camera ramp -> Speed: ${speed} (Slow mode: ${joystickDemoTriggerState})`);
-  joystickDemoHandlePanTilt(speed);
-  joystickDemoHandleZoom(speed);
+  joystickDemoDebug(`Updating camera ramp -> Pan/Tilt Speed: ${panTiltSpeed}, Zoom Speed: ${zoomSpeed} (Precision Mode: ${joystickDemoTriggerState})`);
+  joystickDemoHandlePanTilt(panTiltSpeed);
+  joystickDemoHandleZoom(zoomSpeed);
 }
 
 // --- Listeners ---
@@ -572,16 +657,73 @@ function joystickDemoGetNameByConnectorId(id, object = config) {
 }
 
 /**
- * Sets the Main video source and live-source overlay.
+ * Keeps a Status-page text block within the RoomOS widget-value limit.
+ */
+function joystickDemoFormatStatusSection(label, value) {
+  const status = `${label}: ${value}`;
+  return status.length > 255 ? `${status.slice(0, 252)}...` : status;
+}
+
+/**
+ * Formats the operator-facing sections shown on the panel's Status page.
+ */
+function joystickDemoGetStatusSections() {
+  const controlMethod = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
+  const mainCamera = joystickDemoGetNameByConnectorId(joystickDemoCurrentMainVideo) || `Connector ${joystickDemoCurrentMainVideo}`;
+  const previewCamera = joystickDemoPreviewIsEnabled()
+    ? joystickDemoGetNameByConnectorId(joystickDemoCurrentPreviewVideo) || `Connector ${joystickDemoCurrentPreviewVideo}`
+    : 'Disabled';
+
+  return {
+    Enabled: joystickDemoFormatStatusSection('Joystick controls', joystickDemoEnabled ? 'Enabled' : 'Disabled'),
+    ControlMethod: joystickDemoFormatStatusSection('Control method', controlMethod),
+    Main: joystickDemoFormatStatusSection('Main', mainCamera),
+    Preview: joystickDemoFormatStatusSection('Preview', previewCamera)
+  };
+}
+
+/**
+ * Updates the dynamic Status-page text widgets.
+ * @roomosxapi https://roomos.cisco.com/xapi/Command.UserInterface.Extensions.Widget.SetValue/
+ */
+async function joystickDemoSyncStatus() {
+  const sections = joystickDemoGetStatusSections();
+
+  await Promise.all([
+    xapi.Command.UserInterface.Extensions.Widget.SetValue({
+      WidgetId: joystickDemoEnabledStatusWidgetId,
+      Value: sections.Enabled
+    }),
+    xapi.Command.UserInterface.Extensions.Widget.SetValue({
+      WidgetId: joystickDemoControlMethodStatusWidgetId,
+      Value: sections.ControlMethod
+    }),
+    xapi.Command.UserInterface.Extensions.Widget.SetValue({
+      WidgetId: joystickDemoMainStatusWidgetId,
+      Value: sections.Main
+    }),
+    xapi.Command.UserInterface.Extensions.Widget.SetValue({
+      WidgetId: joystickDemoPreviewStatusWidgetId,
+      Value: sections.Preview
+    })
+  ]);
+}
+
+function joystickDemoRefreshStatus() {
+  joystickDemoSyncStatus()
+    .catch(err => joystickDemoError({ Context: 'Failed to refresh camera status', Error: err.message }, err));
+}
+
+/**
+ * Sets the Main video source.
  * @roomosxapi https://roomos.cisco.com/xapi/Command.Video.Input.SetMainVideoSource/
- * @roomosxapi https://roomos.cisco.com/xapi/Command.Video.Graphics.Text.Display/
  */
 async function joystickDemoSetMainSourceVideo(input) {
   joystickDemoCurrentMainVideo = input;
+  joystickDemoRefreshStatus();
   joystickDemoLog(`Setting Main source to ${joystickDemoGetNameByConnectorId(input)} (ConnectorId: ${input})`);
   try {
     await xapi.Command.Video.Input.SetMainVideoSource({ ConnectorId: input });
-    await xapi.Command.Video.Graphics.Text.Display({ Date: 'Off', Duration: 0, Target: ['MainSource'], Text: `${joystickDemoGetNameByConnectorId(input)} is Live 🔴`, Time: 'Off' });
   } catch (err) {
     const error = { Context: `Failed to set Main video source, ConnectorId: ${input}`, Error: err.message };
     joystickDemoError(error, err);
@@ -592,7 +734,6 @@ async function joystickDemoSetMainSourceVideo(input) {
 /**
  * Assigns the Preview video source to the configured matrix output.
  * @roomosxapi https://roomos.cisco.com/xapi/Command.Video.Matrix.Assign/
- * @roomosxapi https://roomos.cisco.com/xapi/Command.UserInterface.Message.TextLine.Display/
  */
 async function joystickDemoSetPreviewVideo(input) {
   if (!joystickDemoPreviewIsEnabled()) {
@@ -601,10 +742,10 @@ async function joystickDemoSetPreviewVideo(input) {
   }
 
   joystickDemoCurrentPreviewVideo = input;
+  joystickDemoRefreshStatus();
   joystickDemoLog(`Setting Preview source to ${joystickDemoGetNameByConnectorId(input)} (ConnectorId: ${input})`);
   try {
     await xapi.Command.Video.Matrix.Assign({ Mode: 'Replace', SourceId: input, Output: config.previewDisplay.output });
-    await xapi.Command.UserInterface.Message.TextLine.Display({ Text: `Preview of ${joystickDemoGetNameByConnectorId(input)}.`, X: 5000, Y: 10000 });
   } catch (err) {
     const error = { Context: `Failed to set Preview video source, ConnectorId: ${input}, Output: ${config.previewDisplay.output}`, Error: err.message };
     joystickDemoError(error, err);
@@ -673,8 +814,9 @@ function joystickDemoHandlePrecisionMode(state) {
 function joystickDemoHandleControlMain(state, buttonId) {
   if (state !== 'Released') return;
 
-  joystickDemoLog(`${buttonId} pressed -> control mode set to Main`);
+  joystickDemoLog(`${buttonId} selected -> control method set to Live`);
   joystickDemoControlling = 'main';
+  joystickDemoRefreshStatus();
   joystickDemoSetCameraControlId(joystickDemoCurrentMainControl)
     .catch(err => joystickDemoError({ Context: `${buttonId} set control to Main failed`, Error: err.message }, err));
 }
@@ -686,8 +828,9 @@ function joystickDemoHandleControlPreview(state, buttonId) {
     return;
   }
 
-  joystickDemoLog(`${buttonId} pressed -> control mode set to Preview`);
+  joystickDemoLog(`${buttonId} selected -> control method set to Preview`);
   joystickDemoControlling = 'preview';
+  joystickDemoRefreshStatus();
   joystickDemoSetCameraControlId(joystickDemoCurrentPreviewControl)
     .catch(err => joystickDemoError({ Context: `${buttonId} set control to Preview failed`, Error: err.message }, err));
 }
@@ -799,22 +942,15 @@ async function resetJoystickDemo(end = false) {
     if (joystickDemoPreviewIsEnabled()) {
       try {
         await xapi.Command.Video.Matrix.Reset({ Output: config.previewDisplay.output });
-        await xapi.Command.UserInterface.Message.TextLine.Clear();
       } catch (err) {
-        joystickDemoError({ Context: `Failed to clear Preview on end, Output: ${config.previewDisplay.output}`, Error: err.message }, err);
+        joystickDemoError({ Context: `Failed to reset Preview matrix output on end, Output: ${config.previewDisplay.output}`, Error: err.message }, err);
       }
-    }
-
-    try {
-      await xapi.Command.Video.Graphics.Clear({ Target: ['MainSource'] });
-    } catch (err) {
-      joystickDemoError({ Context: 'Failed to clear Main overlay on end', Error: err.message }, err);
     }
   }
 }
 
 /**
- * Reflects the runtime state in both control-panel group buttons.
+ * Reflects runtime state in the control-panel group buttons and status text.
  * @roomosxapi https://roomos.cisco.com/xapi/Command.UserInterface.Extensions.Widget.SetValue/
  */
 async function joystickDemoSyncControlPanel() {
@@ -825,6 +961,92 @@ async function joystickDemoSyncControlPanel() {
   await xapi.Command.UserInterface.Extensions.Widget.SetValue({
     WidgetId: joystickDemoHandednessWidgetId,
     Value: joystickDemoHandedness
+  });
+  await joystickDemoSyncStatus();
+}
+
+/**
+ * Uses best-effort runtime commands to turn off automatic camera tracking before
+ * manual joystick control begins. Unsupported or failed commands are logged and
+ * do not block joystick activation. Tracking configuration is not changed, and
+ * the previous tracking state is intentionally not restored when control ends.
+ * @roomosxapi https://roomos.cisco.com/xapi/Command.Cameras.SpeakerTrack.Deactivate/
+ * @roomosxapi https://roomos.cisco.com/xapi/Command.Cameras.SpeakerTrack.Set/
+ * @roomosxapi https://roomos.cisco.com/xapi/Command.Cameras.SpeakerTrack.Closeup.Deactivate/
+ * @roomosxapi https://roomos.cisco.com/xapi/Command.Cameras.SpeakerTrack.Frames.Deactivate/
+ * @roomosxapi https://roomos.cisco.com/xapi/Command.Cameras.PresenterTrack.Set/
+ */
+async function joystickDemoDisableAutomaticCameraTracking() {
+  const shutdownCommands = [
+    { Name: 'SpeakerTrack', Run: () => xapi.Command.Cameras.SpeakerTrack.Deactivate() },
+    { Name: 'SpeakerTrack Manual behavior', Run: () => xapi.Command.Cameras.SpeakerTrack.Set({ Behavior: 'Manual' }) },
+    { Name: 'SpeakerTrack Closeup', Run: () => xapi.Command.Cameras.SpeakerTrack.Closeup.Deactivate() },
+    { Name: 'SpeakerTrack Frames', Run: () => xapi.Command.Cameras.SpeakerTrack.Frames.Deactivate() },
+    { Name: 'PresenterTrack', Run: () => xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Off' }) }
+  ];
+
+  joystickDemoLog('Setting SpeakerTrack to Manual and disabling SpeakerTrack, Closeup, Frames, and PresenterTrack');
+  const failures = (await Promise.all(shutdownCommands.map(async command => {
+    try {
+      await command.Run();
+      joystickDemoLog(`${command.Name} command completed`);
+      return null;
+    } catch (err) {
+      joystickDemoWarn(`${command.Name} is unavailable or its shutdown command failed; continuing:`, err);
+      return command.Name;
+    }
+  }))).filter(Boolean);
+
+  if (failures.length) {
+    joystickDemoWarn(`Joystick control will continue without confirmation from: ${failures.join(', ')}`);
+  }
+}
+
+/**
+ * Preserves the operator's joystick selections when SpeakerTrack is activated
+ * externally, then reasserts the last Main source selected by the joystick.
+ * @roomosxapi https://roomos.cisco.com/xapi/Status.Cameras.SpeakerTrack.Status/
+ * @roomosxapi https://roomos.cisco.com/xapi/Command.UserInterface.Message.Alert.Display/
+ */
+async function joystickDemoRecoverFromSpeakerTrackActivation() {
+  if (!joystickDemoEnabled) return;
+
+  const lastMainVideo = joystickDemoCurrentMainVideo;
+  joystickDemoWarn(`SpeakerTrack became active while Joystick Controls was enabled; restoring Main source ${lastMainVideo}`);
+
+  // Pause new input during the short recovery so all existing operator choices
+  // remain unchanged and cannot race the remembered Main-source restore.
+  joystickDemoEnabled = false;
+  try {
+    await xapi.Command.UserInterface.Message.Alert.Display({
+      Duration: 10,
+      Title: 'Joystick Controls active',
+      Text: 'Disable Joystick Controls before enabling SpeakerTrack.'
+    });
+  } catch (err) {
+    joystickDemoWarn('Unable to display the Joystick Controls warning:', err);
+  }
+
+  try {
+    await joystickDemoDisableAutomaticCameraTracking();
+    await joystickDemoSetMainSourceVideo(lastMainVideo);
+    const controlMethod = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
+    joystickDemoLog(`SpeakerTrack recovery complete -> Main: ${joystickDemoGetNameByConnectorId(lastMainVideo)}, Control method: ${controlMethod}`);
+  } finally {
+    joystickDemoEnabled = true;
+    await joystickDemoSyncControlPanel();
+  }
+}
+
+function joystickDemoHandleSpeakerTrackStatus(status) {
+  if (status !== 'Active' || !joystickDemoEnabled || joystickDemoSpeakerTrackRecoveryQueued) return;
+
+  joystickDemoSpeakerTrackRecoveryQueued = true;
+  joystickDemoQueueControlPanelAction(
+    joystickDemoRecoverFromSpeakerTrackActivation,
+    'Failed to recover from unexpected SpeakerTrack activation'
+  ).finally(() => {
+    joystickDemoSpeakerTrackRecoveryQueued = false;
   });
 }
 
@@ -840,6 +1062,9 @@ async function joystickDemoSetEnabled(enabled) {
   // Disable input before any asynchronous cleanup so new joystick events cannot
   // race the transition.
   joystickDemoEnabled = false;
+  if (enabled) {
+    await joystickDemoDisableAutomaticCameraTracking();
+  }
   await resetJoystickDemo(!enabled);
   joystickDemoEnabled = enabled;
   joystickDemoLog(`Joystick controls ${enabled ? 'enabled' : 'disabled'}`);
@@ -930,6 +1155,7 @@ async function installJoystickDemoPanel() {
 async function init() {
   try {
     joystickDemoValidatePreviewDisplayConfig();
+    joystickDemoValidateCameraMotionConfig();
     joystickDemoValidateCameraConfig();
     joystickDemoValidateControlConfig();
     joystickDemoResetTrackingState();
@@ -943,9 +1169,10 @@ async function init() {
     });
 
     xapi.Event.UserInterface.Extensions.Widget.Action.on(joystickDemoHandleControlPanelAction);
+    xapi.Status.Cameras.SpeakerTrack.Status.on(joystickDemoHandleSpeakerTrackStatus);
 
     xapi.Event.UserInterface.Extensions.Event.PageOpened.on(({ PageId }) =>
-      PageId === joystickDemoPanelId &&
+      [joystickDemoControlsPageId, joystickDemoStatusPageId].includes(PageId) &&
         joystickDemoQueueControlPanelAction(
           joystickDemoSyncControlPanel,
           'Failed to refresh Joystick Controls panel state'

@@ -7,6 +7,7 @@ const installerRoot = resolve(import.meta.dirname, '..');
 const projectRoot = resolve(installerRoot, '..');
 const outputDirectory = resolve(installerRoot, 'public/assets');
 const macroFileName = 'Joystick_CameraControl_ProductionSwitcher.js';
+const userManualFileName = 'Joystick_CameraControl_User_Manual.html';
 const macroPath = resolve(projectRoot, macroFileName);
 const guidePath = resolve(projectRoot, 'Guides/thrustmaster16000m-camera-guide.html');
 const externalClassUrl = 'https://raw.githubusercontent.com/ctg-tme/Thrustmaster_16000M-InputDevice-Class/main/Thrustmaster_16000M-Class.js';
@@ -31,6 +32,7 @@ if (!versionMatch) throw new Error('Unable to determine the macro version');
 await mkdir(outputDirectory, { recursive: true });
 await Promise.all([
   writeFile(resolve(outputDirectory, macroFileName), macroSource),
+  writeFile(resolve(outputDirectory, userManualFileName), guideSource),
   writeFile(resolve(outputDirectory, 'thrustmaster-t16000m.png'), Buffer.from(imageMatch[1], 'base64')),
   writeFile(
     resolve(outputDirectory, 'source-manifest.json'),

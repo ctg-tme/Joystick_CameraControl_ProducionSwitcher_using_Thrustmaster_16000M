@@ -31,7 +31,8 @@ export interface ConfiguratorState {
   handedness: Handedness;
   previewMode: PreviewDisplayMode;
   previewOutput: number;
-  baseRampSpeed: number;
+  panTiltRampSpeed: number;
+  zoomRampSpeed: number;
   slowModeDivisor: number;
   cameras: CameraDefinition[];
   defaultCameraId: string;
@@ -124,6 +125,16 @@ export function assignmentActionId(assignment: string): string | undefined {
   return assignment.startsWith('action:') ? assignment.slice('action:'.length) : undefined;
 }
 
+const PREVIEW_DEPENDENT_ACTION_IDS: ReadonlySet<string> = new Set([
+  'SwapMainPreview',
+  'ControlPreview',
+]);
+
+export function isPreviewDependentAssignment(assignment: string): boolean {
+  const actionId = assignmentActionId(assignment);
+  return actionId !== undefined && PREVIEW_DEPENDENT_ACTION_IDS.has(actionId);
+}
+
 export function logicalButtonId(button: PhysicalButton, handedness: Handedness): string {
   return handedness === 'left' ? button.leftLogicalId : button.rightLogicalId;
 }
@@ -175,10 +186,15 @@ export function createDefaultAssignments(): Record<number, string> {
 export function createDefaultState(): ConfiguratorState {
   const cameras: CameraDefinition[] = [
     { id: 'camera-1', Name: 'Camera 1', ConnectorId: '1', ControlId: '1' },
-    { id: 'camera-2', Name: 'Camera 2', ConnectorId: '2', ControlId: '2' },
-    { id: 'camera-3', Name: 'Camera 3', ConnectorId: '3', ControlId: '3' },
-    { id: 'camera-4', Name: 'Camera 4', ConnectorId: '4', ControlId: '4' },
   ];
+  const assignments = createDefaultAssignments();
+
+  for (const button of PHYSICAL_BUTTONS) {
+    const cameraId = assignmentCameraId(assignments[button.number]);
+    if (cameraId && !cameras.some((camera) => camera.id === cameraId)) {
+      assignments[button.number] = builtInAssignment('');
+    }
+  }
 
   return {
     projectName: 'Joystick Camera Control',
@@ -186,10 +202,11 @@ export function createDefaultState(): ConfiguratorState {
     handedness: 'right',
     previewMode: 'On',
     previewOutput: 2,
-    baseRampSpeed: 12,
+    panTiltRampSpeed: 12,
+    zoomRampSpeed: 12,
     slowModeDivisor: 2,
     cameras,
     defaultCameraId: 'camera-1',
-    assignments: createDefaultAssignments(),
+    assignments,
   };
 }

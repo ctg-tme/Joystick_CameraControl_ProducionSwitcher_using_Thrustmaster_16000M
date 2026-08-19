@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PROJECT_INSTALLER_URL,
+  PROJECT_REPOSITORY_URL,
   buildMacroConfig,
   generateConfiguredMacro,
   parseConfiguratorStateFromMacro,
@@ -10,6 +12,7 @@ import {
   builtInAssignment,
   cameraAssignment,
   createDefaultState,
+  logicalButtonId,
 } from './model';
 
 describe('joystick configuration generation', () => {
@@ -18,14 +21,22 @@ describe('joystick configuration generation', () => {
     const config = buildMacroConfig(state);
 
     expect(Object.keys(config.controls)).toHaveLength(PHYSICAL_BUTTONS.length);
-    expect(Object.keys(config.controls)).toEqual(PHYSICAL_BUTTONS.map((button) => String(button.number)));
-    expect(config.controls[2]).toBe('');
-    expect(config.controls[8]).toBe('');
-    expect(config.controls[13]).toBe('');
-    expect(config.controls[14]).toBe('');
-    expect(config.controls[12]).toBe('SelectCamera1');
+    expect(Object.keys(config.controls)).toEqual(
+      PHYSICAL_BUTTONS.map((button) => logicalButtonId(button, state.handedness)),
+    );
+    expect(config.controls.STICK_SOUTH).toBe('');
+    expect(config.controls.BASE_LEFT_6).toBe('');
+    expect(config.controls.BASE_RIGHT_1).toBe('');
+    expect(config.controls.BASE_RIGHT_4).toBe('');
+    expect(config.controls.BASE_RIGHT_2).toBe('SelectCamera1');
+    expect(config.cameras).toHaveLength(1);
     expect(config.cameras[0].ButtonAction).toBe('SelectCamera1');
     expect(config.joystick.DefaultCameraAction).toBe('SelectCamera1');
+    expect(config.joystick.Camera).toEqual({
+      PanTiltRampSpeed: 12,
+      ZoomRampSpeed: 12,
+      SlowModeDivisor: 2,
+    });
     expect(config.previewDisplay).toEqual({
       mode: 'On',
       output: 2,
@@ -33,16 +44,18 @@ describe('joystick configuration generation', () => {
     expect(config.documentation).toEqual({
       ProjectName: 'Joystick Camera Control',
       RoomName: 'Room 1',
+      InstallerUrl: PROJECT_INSTALLER_URL,
+      RepositoryUrl: PROJECT_REPOSITORY_URL,
     });
   });
 
-  it('keeps numbered physical assignments unchanged when handedness changes', () => {
+  it('uses handedness-aware named IDs while keeping physical assignments unchanged', () => {
     const state = createDefaultState();
     state.handedness = 'left';
     const config = buildMacroConfig(state);
 
-    expect(config.controls[5]).toBe('ControlMain');
-    expect(config.controls[11]).toBe('SelectCamera2');
+    expect(config.controls.BASE_RIGHT_3).toBe('ControlMain');
+    expect(config.controls.BASE_LEFT_2).toBe('SelectCamera1');
   });
 
   it('allows built-in actions to be unused while cameras remain exactly once', () => {
@@ -52,11 +65,58 @@ describe('joystick configuration generation', () => {
     expect(validateConfiguratorState(state)).toEqual([]);
   });
 
+  it('allows optional project and room names to be blank and preserves them on import', () => {
+    const state = createDefaultState();
+    state.projectName = '';
+    state.roomName = '';
+    const template = [
+      '/* JOYSTICK_CONFIG_START */',
+      'const config = {};',
+      '/* JOYSTICK_CONFIG_END */',
+    ].join('\n');
+
+    expect(validateConfiguratorState(state)).toEqual([]);
+
+    const recovered = parseConfiguratorStateFromMacro(generateConfiguredMacro(template, state));
+    expect(recovered.projectName).toBe('');
+    expect(recovered.roomName).toBe('');
+  });
+
   it('rejects an unsupported Preview display mode', () => {
     const state = createDefaultState();
     state.previewMode = 'Standby' as typeof state.previewMode;
 
     expect(validateConfiguratorState(state)).toContain('Preview display mode must be On or Off.');
+  });
+
+  it('validates the independent RoomOS pan/tilt and zoom speed ranges', () => {
+    const state = createDefaultState();
+    state.panTiltRampSpeed = 24;
+    state.zoomRampSpeed = 15;
+
+    expect(validateConfiguratorState(state)).toEqual([]);
+
+    state.panTiltRampSpeed = 25;
+    state.zoomRampSpeed = 16;
+    expect(validateConfiguratorState(state)).toEqual(expect.arrayContaining([
+      'Pan/tilt ramp speed must be between 1 and 24.',
+      'Zoom ramp speed must be between 1 and 15.',
+    ]));
+  });
+
+  it('limits Preview output and Precision divisor to the WebUI options', () => {
+    const state = createDefaultState();
+    state.previewOutput = 3;
+    state.slowModeDivisor = 4;
+
+    expect(validateConfiguratorState(state)).toEqual([]);
+
+    state.previewOutput = 4;
+    state.slowModeDivisor = 5;
+    expect(validateConfiguratorState(state)).toEqual(expect.arrayContaining([
+      'Preview output must be between 1 and 3.',
+      'Precision divisor must be between 1 and 4.',
+    ]));
   });
 
   it('rejects a camera that appears on more than one button', () => {
@@ -102,7 +162,9 @@ describe('joystick configuration generation', () => {
     expect(recovered.roomName).toBe('New York EBC');
     expect(recovered.previewMode).toBe('Off');
     expect(recovered.previewOutput).toBe(2);
-    expect(recovered.cameras.map((camera) => camera.Name)).toEqual(['Camera 1', 'Camera 2', 'Camera 3', 'Camera 4']);
+    expect(recovered.panTiltRampSpeed).toBe(12);
+    expect(recovered.zoomRampSpeed).toBe(12);
+    expect(recovered.cameras.map((camera) => camera.Name)).toEqual(['Camera 1']);
     expect(recovered.assignments[2]).toBe(builtInAssignment('SelfviewOff'));
     expect(recovered.assignments[12]).toBe(cameraAssignment('camera-1'));
   });
@@ -138,6 +200,8 @@ describe('joystick configuration generation', () => {
     expect(recovered.roomName).toBe('Room 1');
     expect(recovered.previewMode).toBe('On');
     expect(recovered.previewOutput).toBe(2);
+    expect(recovered.panTiltRampSpeed).toBe(12);
+    expect(recovered.zoomRampSpeed).toBe(12);
     expect(recovered.cameras[0].Name).toBe('Legacy Camera');
     expect(recovered.assignments[12]).toBe(cameraAssignment('camera-1'));
     expect(recovered.assignments[2]).toBe(builtInAssignment(''));

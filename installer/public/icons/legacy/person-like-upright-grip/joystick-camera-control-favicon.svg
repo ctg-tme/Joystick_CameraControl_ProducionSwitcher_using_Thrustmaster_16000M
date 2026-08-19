@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Joystick Camera Control">
+  <defs>
+    <mask id="glyph" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="black"/>
+      <path fill="white" d="M161 280h190c39 0 75 23 91 59l35 80c14 32-10 59-45 59H80c-35 0-59-27-45-59l35-80c16-36 52-59 91-59ZM220 296l-17-85c-26-15-42-43-42-74V91c0-39 29-53 68-57l44-4c38-3 71 25 75 63l5 45c4 35-14 68-45 84l-4 74h-84Z"/>
+      <circle cx="132" cy="392" r="23" fill="black"/>
+      <circle cx="380" cy="392" r="23" fill="black"/>
+    </mask>
+  </defs>
+  <rect x="12" y="12" width="488" height="488" rx="104" fill="#52a62b"/>
+  <g transform="translate(48 48) scale(.8125)" mask="url(#glyph)">
+    <rect width="512" height="512" fill="#fff"/>
+  </g>
+</svg>

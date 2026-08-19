@@ -6,12 +6,16 @@ import {
   builtInAssignment,
   cameraAssignment,
   cameraButtonActions,
+  logicalButtonId,
   type ConfiguratorState,
   type PreviewDisplayMode,
 } from './model';
 
 const CONFIG_START = '/* JOYSTICK_CONFIG_START */';
 const CONFIG_END = '/* JOYSTICK_CONFIG_END */';
+
+export const PROJECT_INSTALLER_URL = 'https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/';
+export const PROJECT_REPOSITORY_URL = 'https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M';
 
 export interface GeneratedCamera {
   ButtonAction: string;
@@ -24,6 +28,8 @@ export interface GeneratedMacroConfig {
   documentation: {
     ProjectName: string;
     RoomName: string;
+    InstallerUrl: string;
+    RepositoryUrl: string;
   };
   previewDisplay: {
     mode: PreviewDisplayMode;
@@ -33,11 +39,12 @@ export interface GeneratedMacroConfig {
     StartingHand: 'right' | 'left';
     DefaultCameraAction: string;
     Camera: {
-      BaseRampSpeed: number;
+      PanTiltRampSpeed: number;
+      ZoomRampSpeed: number;
       SlowModeDivisor: number;
     };
   };
-  controls: Record<number, string>;
+  controls: Record<string, string>;
   cameras: GeneratedCamera[];
 }
 
@@ -46,12 +53,6 @@ export function validateConfiguratorState(state: ConfiguratorState): string[] {
   const actionIds = new Set(BUILT_IN_ACTIONS.map((action) => action.id));
   const cameraIds = new Set(state.cameras.map((camera) => camera.id));
 
-  if (!state.projectName.trim()) {
-    errors.push('Enter a project name.');
-  }
-  if (!state.roomName.trim()) {
-    errors.push('Enter a room name.');
-  }
   if (state.cameras.length < 1 || state.cameras.length > 4) {
     errors.push('Configure between one and four cameras.');
   }
@@ -61,14 +62,17 @@ export function validateConfiguratorState(state: ConfiguratorState): string[] {
   if (state.previewMode !== 'On' && state.previewMode !== 'Off') {
     errors.push('Preview display mode must be On or Off.');
   }
-  if (!Number.isInteger(state.previewOutput) || state.previewOutput < 1) {
-    errors.push('Preview output must be a positive whole number.');
+  if (!Number.isInteger(state.previewOutput) || state.previewOutput < 1 || state.previewOutput > 3) {
+    errors.push('Preview output must be between 1 and 3.');
   }
-  if (!Number.isInteger(state.baseRampSpeed) || state.baseRampSpeed < 1 || state.baseRampSpeed > 15) {
-    errors.push('Base ramp speed must be between 1 and 15.');
+  if (!Number.isInteger(state.panTiltRampSpeed) || state.panTiltRampSpeed < 1 || state.panTiltRampSpeed > 24) {
+    errors.push('Pan/tilt ramp speed must be between 1 and 24.');
   }
-  if (!Number.isFinite(state.slowModeDivisor) || state.slowModeDivisor <= 0) {
-    errors.push('Precision divisor must be greater than zero.');
+  if (!Number.isInteger(state.zoomRampSpeed) || state.zoomRampSpeed < 1 || state.zoomRampSpeed > 15) {
+    errors.push('Zoom ramp speed must be between 1 and 15.');
+  }
+  if (!Number.isInteger(state.slowModeDivisor) || state.slowModeDivisor < 1 || state.slowModeDivisor > 4) {
+    errors.push('Precision divisor must be between 1 and 4.');
   }
 
   const cameraActions = cameraButtonActions(state.cameras);
@@ -114,7 +118,7 @@ export function buildMacroConfig(state: ConfiguratorState): GeneratedMacroConfig
   if (errors.length) throw new Error(errors.join(' '));
 
   const cameraActions = cameraButtonActions(state.cameras);
-  const controls: Record<number, string> = {};
+  const controls: Record<string, string> = {};
 
   for (const button of PHYSICAL_BUTTONS) {
     const assignment = state.assignments[button.number];
@@ -122,7 +126,7 @@ export function buildMacroConfig(state: ConfiguratorState): GeneratedMacroConfig
     const cameraId = assignmentCameraId(assignment);
     const buttonAction = actionId ?? (cameraId ? cameraActions.get(cameraId) : undefined);
     if (buttonAction === undefined) throw new Error(`Unable to resolve ButtonAction for button ${button.number}.`);
-    controls[button.number] = buttonAction;
+    controls[logicalButtonId(button, state.handedness)] = buttonAction;
   }
 
   const defaultCameraAction = cameraActions.get(state.defaultCameraId);
@@ -132,6 +136,8 @@ export function buildMacroConfig(state: ConfiguratorState): GeneratedMacroConfig
     documentation: {
       ProjectName: state.projectName.trim(),
       RoomName: state.roomName.trim(),
+      InstallerUrl: PROJECT_INSTALLER_URL,
+      RepositoryUrl: PROJECT_REPOSITORY_URL,
     },
     previewDisplay: {
       mode: state.previewMode,
@@ -141,7 +147,8 @@ export function buildMacroConfig(state: ConfiguratorState): GeneratedMacroConfig
       StartingHand: state.handedness,
       DefaultCameraAction: defaultCameraAction,
       Camera: {
-        BaseRampSpeed: state.baseRampSpeed,
+        PanTiltRampSpeed: state.panTiltRampSpeed,
+        ZoomRampSpeed: state.zoomRampSpeed,
         SlowModeDivisor: state.slowModeDivisor,
       },
     },
@@ -389,6 +396,18 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
   const raw = configRecord(new ObjectLiteralParser(extractConfigObjectSource(macroSource)).parse(), 'config');
   const joystick = configRecord(raw.joystick, 'config.joystick');
   const cameraMotion = configRecord(joystick.Camera, 'config.joystick.Camera');
+  const legacyRampSpeed = cameraMotion.BaseRampSpeed === undefined
+    ? undefined
+    : configNumber(cameraMotion.BaseRampSpeed, 'config.joystick.Camera.BaseRampSpeed');
+  const panTiltRampSpeed = cameraMotion.PanTiltRampSpeed === undefined
+    ? legacyRampSpeed
+    : configNumber(cameraMotion.PanTiltRampSpeed, 'config.joystick.Camera.PanTiltRampSpeed');
+  if (panTiltRampSpeed === undefined) {
+    throw new Error('config.joystick.Camera.PanTiltRampSpeed must be a number.');
+  }
+  const zoomRampSpeed = cameraMotion.ZoomRampSpeed === undefined
+    ? Math.min(15, legacyRampSpeed ?? panTiltRampSpeed)
+    : configNumber(cameraMotion.ZoomRampSpeed, 'config.joystick.Camera.ZoomRampSpeed');
   const controls = configRecord(raw.controls, 'config.controls');
   if (!Array.isArray(raw.cameras)) throw new Error('config.cameras must be an array.');
   if (raw.cameras.length < 1 || raw.cameras.length > 4) {
@@ -410,11 +429,28 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
     };
   });
 
+  const handedness = configString(joystick.StartingHand, 'config.joystick.StartingHand');
+  if (handedness !== 'right' && handedness !== 'left') {
+    throw new Error('StartingHand must be "right" or "left".');
+  }
+
   const builtInIds = new Set(BUILT_IN_ACTIONS.map((action) => action.id));
   const assignments: Record<number, string> = {};
+  const numberedControlCount = PHYSICAL_BUTTONS.filter((button) =>
+    Object.prototype.hasOwnProperty.call(controls, String(button.number))
+  ).length;
+  if (numberedControlCount > 0 && numberedControlCount !== PHYSICAL_BUTTONS.length) {
+    throw new Error('Legacy numbered controls must explicitly include all 16 physical buttons.');
+  }
+  const usesNumberedControls = numberedControlCount === PHYSICAL_BUTTONS.length;
+
   for (const button of PHYSICAL_BUTTONS) {
-    const value = controls[String(button.number)];
-    const action = value == null ? '' : configString(value, `config.controls.${button.number}`);
+    const controlKey = usesNumberedControls
+      ? String(button.number)
+      : logicalButtonId(button, handedness);
+    const value = controls[controlKey];
+    const importedAction = value == null ? '' : configString(value, `config.controls.${controlKey}`);
+    const action = importedAction === 'Unassigned' ? '' : importedAction;
     if (builtInIds.has(action)) {
       assignments[button.number] = builtInAssignment(action);
       continue;
@@ -427,10 +463,6 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
   const defaultCameraAction = configString(joystick.DefaultCameraAction, 'config.joystick.DefaultCameraAction');
   const defaultCameraId = cameraActionToId.get(defaultCameraAction);
   if (!defaultCameraId) throw new Error('DefaultCameraAction does not reference a configured camera.');
-  const handedness = configString(joystick.StartingHand, 'config.joystick.StartingHand');
-  if (handedness !== 'right' && handedness !== 'left') {
-    throw new Error('StartingHand must be "right" or "left".');
-  }
 
   const documentation = raw.documentation && typeof raw.documentation === 'object' && !Array.isArray(raw.documentation)
     ? raw.documentation as Record<string, unknown>
@@ -451,16 +483,17 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
     previewOutput = configNumber(displays.right, 'config.displays.right');
   }
   const state: ConfiguratorState = {
-    projectName: typeof documentation.ProjectName === 'string' && documentation.ProjectName.trim()
+    projectName: typeof documentation.ProjectName === 'string'
       ? documentation.ProjectName
       : 'Joystick Camera Control',
-    roomName: typeof documentation.RoomName === 'string' && documentation.RoomName.trim()
+    roomName: typeof documentation.RoomName === 'string'
       ? documentation.RoomName
       : 'Room 1',
     handedness,
     previewMode,
     previewOutput,
-    baseRampSpeed: configNumber(cameraMotion.BaseRampSpeed, 'config.joystick.Camera.BaseRampSpeed'),
+    panTiltRampSpeed,
+    zoomRampSpeed,
     slowModeDivisor: configNumber(cameraMotion.SlowModeDivisor, 'config.joystick.Camera.SlowModeDivisor'),
     cameras,
     defaultCameraId,

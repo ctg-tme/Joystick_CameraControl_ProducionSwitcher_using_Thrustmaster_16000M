@@ -1,0 +1,181 @@
+{
+  "kind": "single",
+  "input": "/Users/bomcgoni/Documents/GitHub/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/installer/public/icons/joystick-camera-control.svg",
+  "icons": [
+    {
+      "input": "/Users/bomcgoni/Documents/GitHub/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/installer/public/icons/joystick-camera-control.svg",
+      "source_kind_or_mode": "rendered SVG",
+      "dimensions": {
+        "width": 512,
+        "height": 512
+      },
+      "rgba_output": true,
+      "original_mode": "RGBA",
+      "corner_alpha": {
+        "top_left": 0,
+        "top_right": 0,
+        "bottom_left": 0,
+        "bottom_right": 0
+      },
+      "alpha_bbox": [
+        29,
+        27,
+        483,
+        485
+      ],
+      "padding_pixels": {
+        "left": 29,
+        "top": 27,
+        "right": 29,
+        "bottom": 27
+      },
+      "padding_percent": {
+        "left": 5.6641,
+        "top": 5.2734,
+        "right": 5.6641,
+        "bottom": 5.2734
+      },
+      "alpha_integrity": {
+        "transparent_pixels": 161129,
+        "partial_alpha_pixels": 6534,
+        "opaque_pixels": 94481,
+        "visible_nonwhite_pixels": 0,
+        "transparent_nonzero_rgb_pixels": 0
+      },
+      "source_to_screen_scale": 0.1171875,
+      "alpha_bbox_screen_estimate": {
+        "width": 53.2031,
+        "height": 53.6719
+      },
+      "component_geometry": {
+        "visual_threshold": 127,
+        "alpha_geometry_threshold": 32,
+        "source_visual": {
+          "threshold": 127,
+          "count": 1,
+          "minimum_gap_pixels": null,
+          "closest_pair": null,
+          "component_areas": [
+            97771
+          ],
+          "components": [
+            {
+              "index": 1,
+              "area": 97771,
+              "bbox": [
+                32,
+                30,
+                480,
+                482
+              ],
+              "centroid": [
+                266.257,
+                333.204
+              ]
+            }
+          ]
+        },
+        "at_60_visual": {
+          "threshold": 127,
+          "count": 1,
+          "minimum_gap_pixels": null,
+          "closest_pair": null,
+          "component_areas": [
+            1324
+          ],
+          "components": [
+            {
+              "index": 1,
+              "area": 1324,
+              "bbox": [
+                4,
+                4,
+                56,
+                56
+              ],
+              "centroid": [
+                30.795,
+                38.353
+              ]
+            }
+          ]
+        },
+        "source_alpha": {
+          "threshold": 32,
+          "count": 1,
+          "minimum_gap_pixels": null,
+          "closest_pair": null,
+          "component_areas": [
+            98248
+          ],
+          "components": [
+            {
+              "index": 1,
+              "area": 98248,
+              "bbox": [
+                32,
+                30,
+                480,
+                482
+              ],
+              "centroid": [
+                266.429,
+                332.946
+              ]
+            }
+          ]
+        },
+        "at_60_alpha": {
+          "threshold": 32,
+          "count": 1,
+          "minimum_gap_pixels": null,
+          "closest_pair": null,
+          "component_areas": [
+            1426
+          ],
+          "components": [
+            {
+              "index": 1,
+              "area": 1426,
+              "bbox": [
+                3,
+                3,
+                57,
+                57
+              ],
+              "centroid": [
+                30.912,
+                38.536
+              ]
+            }
+          ]
+        },
+        "merges_at_60": false
+      },
+      "expected_components": null,
+      "expected_components_at_60": null,
+      "minimum_required_component_gap": {
+        "source": null,
+        "at_60": null
+      },
+      "important_gaps": [],
+      "preview_60": "/Users/bomcgoni/Documents/GitHub/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/installer/public/icons/joystick-camera-control-60px-preview.png",
+      "warnings": [],
+      "failures": [],
+      "valid": true,
+      "name": "joystick-camera-control",
+      "label": "joystick-camera-control",
+      "renderer": "Sharp (bundled Node)",
+      "svg_master": "/Users/bomcgoni/Documents/GitHub/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/installer/public/icons/joystick-camera-control.svg",
+      "upload_png": "/Users/bomcgoni/Documents/GitHub/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/installer/public/icons/joystick-camera-control-512.png",
+      "render_count": 1,
+      "preview_derivation": "512px PNG resized with LANCZOS"
+    }
+  ],
+  "contact_sheet": null,
+  "pipeline_processes": 1,
+  "renderer_processes": 1,
+  "total_svg_renders": 1,
+  "independent_60px_renders": 0,
+  "valid": true
+}

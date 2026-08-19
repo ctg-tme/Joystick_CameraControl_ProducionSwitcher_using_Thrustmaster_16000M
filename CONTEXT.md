@@ -36,7 +36,7 @@ A generated, readable action such as `SelectCamera1` that connects one camera de
 _Avoid_: Camera map ID, camera index, camera button ID
 
 **No Action**:
-An intentionally blank control value (`''`, `null`, or `undefined`) for a listed physical button. The browser configurator generates `''`.
+An intentionally blank control value (`''`, `null`, or `undefined`) for a listed logical button ID. The browser configurator generates `''`.
 _Avoid_: Unassigned action
 
 **Guide Button**:
@@ -44,7 +44,7 @@ The stable physical button number printed on the operator guide.
 _Avoid_: Logical button ID
 
 **Logical Button ID**:
-The handedness-dependent Thrustmaster class identifier resolved internally from a Guide Button. It is not part of the public `config.controls` interface.
+The readable, handedness-dependent Thrustmaster class identifier, such as `STICK_TRIGGER` or `BASE_LEFT_1`, used as a public `config.controls` key.
 _Avoid_: Configuration button number
 
 ## Development and deployment
