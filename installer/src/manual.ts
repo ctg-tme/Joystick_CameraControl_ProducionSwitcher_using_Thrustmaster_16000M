@@ -457,14 +457,14 @@ function drawEnablementColumn(
     size: 6.5,
     color: COLORS.muted,
   });
-  drawWrappedText(page, `${model.handedness} room. ${model.enablement.enableResult}`, {
+  drawWrappedText(page, 'Scan to open the project repository.', {
     x: x + 10,
     y: 76,
     width: 166,
-    font: fonts.bold,
-    size: 7.2,
+    font: fonts.regular,
+    size: 7.6,
     lineHeight: 9,
-    maxLines: 3,
+    maxLines: 2,
   });
   drawRepositoryQrCode(page, model.repositoryUrl, repositoryIcon, x + 187, 48, 54);
 }
