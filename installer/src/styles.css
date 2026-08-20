@@ -1272,8 +1272,8 @@ code {
 
 .discovered-camera-card {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 8px;
+  padding: 10px 12px;
   border: 1px solid var(--control-border-weak-default);
   border-radius: 8px;
   background: var(--control-bg-weak-default);
@@ -1309,12 +1309,8 @@ code {
 
 .discovered-camera-card dl {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 12px;
-}
-
-.discovered-camera-card dl div:last-child {
-  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .discovered-camera-card dt {
@@ -1325,10 +1321,25 @@ code {
 }
 
 .discovered-camera-card dd {
-  margin: 2px 0 0;
+  margin: 0;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
+  line-height: 18px;
+}
+
+.discovered-camera-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.discovered-camera-actions .button {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .camera-discovery-warnings {
@@ -1369,17 +1380,17 @@ code {
 
 .camera-card-header {
   display: grid;
-  grid-template-columns: 38px 1fr 34px;
-  gap: 10px;
+  grid-template-columns: 30px 1fr 30px;
+  gap: 8px;
   align-items: center;
-  padding: 18px 15px 14px;
+  padding: 14px 12px 8px;
   border-bottom: 1px solid var(--line);
 }
 
 .camera-number {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   border-radius: 50%;
   background: var(--camera);
@@ -1420,13 +1431,14 @@ code {
 
 .camera-fields {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  padding: 15px;
+  grid-template-columns: minmax(160px, 2fr) minmax(110px, .8fr) minmax(170px, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px 12px;
 }
 
 .camera-fields .wide {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .camera-actions {
@@ -2530,6 +2542,16 @@ td code {
 }
 
 @media (max-width: 1199px) {
+  .camera-source-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .discovered-cameras-pane {
+    padding: 22px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
   .button-map-section .section-heading {
     display: grid;
   }
@@ -2731,14 +2753,12 @@ td code {
     grid-template-columns: 1fr;
   }
 
-  .camera-source-layout {
-    grid-template-columns: 1fr;
+  .camera-fields {
+    grid-template-columns: 1fr 1fr;
   }
 
-  .discovered-cameras-pane {
-    padding: 22px 0 0;
-    border-top: 1px solid var(--line);
-    border-left: 0;
+  .camera-fields .wide {
+    grid-column: 1 / -1;
   }
 
   .camera-pane-heading {

@@ -26,6 +26,11 @@ export interface DiscoveredCameraSource {
   model?: string;
 }
 
+export interface CameraDiscoveryStatuses {
+  cameras?: unknown;
+  videoInputConnectors?: unknown;
+}
+
 export interface InstallSources {
   dependencies: Array<{
     name: string;
@@ -159,26 +164,46 @@ function collectionItems(
 /** Normalizes JSXAPI collection/container variants into installer camera-source records. */
 export function discoverCameraSourcesFromResponses(
   connectorConfiguration: unknown,
-  cameraStatus: unknown,
-  statusAvailable = true,
+  statuses: CameraDiscoveryStatuses,
 ): DiscoveredCameraSource[] {
   const connectors = collectionItems(
     connectorConfiguration,
     'Connector',
     (record) => objectField(record, 'InputSourceType') !== undefined,
   );
-  const cameras = statusAvailable
-    ? collectionItems(
-        cameraStatus,
-        'Camera',
-        (record) => objectField(record, 'Connected', 'Model', 'DetectedConnector') !== undefined,
-      )
-    : [];
+  const cameras = collectionItems(
+    statuses.cameras,
+    'Camera',
+    (record) => objectField(record, 'Connected', 'Model', 'DetectedConnector') !== undefined,
+  );
+  const videoInputConnectors = collectionItems(
+    statuses.videoInputConnectors,
+    'Connector',
+    (record) => objectField(record, 'Connected', 'SignalState', 'SourceId', 'Type') !== undefined,
+  );
   const camerasById = new Map<string, Record<string, unknown>>();
   for (const camera of cameras) {
     const id = optionalScalarString(objectField(camera, 'id', 'Id'))?.trim();
     if (id) camerasById.set(id, camera);
   }
+  const videoInputConnectorsById = new Map<string, Record<string, unknown>>();
+  for (const connector of videoInputConnectors) {
+    const id = optionalScalarString(objectField(connector, 'id', 'Id'))?.trim();
+    if (id) videoInputConnectorsById.set(id, connector);
+  }
+
+  const connectionFromStatus = (value: unknown): DiscoveredCameraConnection | undefined => {
+    const normalized = optionalScalarString(value)?.trim().toLowerCase();
+    if (normalized === 'true') return 'connected';
+    if (normalized === 'false') return 'disconnected';
+    if (normalized === 'unknown') return 'unavailable';
+    return undefined;
+  };
+  const connectionOrder: Record<DiscoveredCameraConnection, number> = {
+    connected: 0,
+    disconnected: 1,
+    unavailable: 2,
+  };
 
   return connectors
     .filter((connector) => optionalScalarString(objectField(connector, 'InputSourceType'))?.toLowerCase() === 'camera')
@@ -188,29 +213,35 @@ export function discoverCameraSourcesFromResponses(
       const cameraControl = recordValue(objectField(connector, 'CameraControl'));
       const controlId = optionalScalarString(cameraControl && objectField(cameraControl, 'CameraId'))?.trim() || null;
       const matchedStatus = controlId === null ? undefined : camerasById.get(controlId);
-      const connected = optionalScalarString(matchedStatus && objectField(matchedStatus, 'Connected'));
+      const connectorStatus = videoInputConnectorsById.get(connectorId);
+      const connection = connectionFromStatus(matchedStatus && objectField(matchedStatus, 'Connected'))
+        ?? connectionFromStatus(connectorStatus && objectField(connectorStatus, 'Connected'))
+        ?? 'unavailable';
       return [{
         ConnectorId: connectorId,
         Name: optionalScalarString(objectField(connector, 'Name'))?.trim() ?? '',
         ControlId: controlId,
         cameraControlMode: optionalScalarString(cameraControl && objectField(cameraControl, 'Mode')),
-        connection: statusAvailable
-          ? (connected?.toLowerCase() === 'true' ? 'connected' : 'disconnected')
-          : 'unavailable',
+        connection,
         model: optionalScalarString(matchedStatus && objectField(matchedStatus, 'Model'))?.trim() || undefined,
       }];
     })
-    .sort((left, right) => left.ConnectorId.localeCompare(right.ConnectorId, undefined, { numeric: true }));
+    .sort((left, right) => connectionOrder[left.connection] - connectionOrder[right.connection]
+      || left.ConnectorId.localeCompare(right.ConnectorId, undefined, { numeric: true }));
 }
 
 async function discoverCameraSources(xapi: DeviceXapi): Promise<DiscoveredCameraSource[]> {
   const connectorConfiguration = await xapi.config.get('Video Input Connector');
-  try {
-    const cameraStatus = await xapi.status.get('Cameras');
-    return discoverCameraSourcesFromResponses(connectorConfiguration, cameraStatus);
-  } catch {
-    return discoverCameraSourcesFromResponses(connectorConfiguration, undefined, false);
-  }
+  const [cameraStatus, videoInputConnectorStatus] = await Promise.allSettled([
+    xapi.status.get('Cameras'),
+    xapi.status.get('Video Input Connector'),
+  ]);
+  return discoverCameraSourcesFromResponses(connectorConfiguration, {
+    cameras: cameraStatus.status === 'fulfilled' ? cameraStatus.value : undefined,
+    videoInputConnectors: videoInputConnectorStatus.status === 'fulfilled'
+      ? videoInputConnectorStatus.value
+      : undefined,
+  });
 }
 
 async function verifyConnectedDevice(

@@ -38,10 +38,10 @@ describe('device installation', () => {
         Name: '',
         CameraControl: { CameraId: '4', Mode: 'Off' },
       }],
-      { Camera: [
+      { cameras: { Camera: [
         { id: '1', Connected: 'True', Model: 'Quad Camera' },
         { id: '4', Connected: 'False' },
-      ] },
+      ] } },
     );
 
     expect(result).toEqual([{
@@ -71,13 +71,41 @@ describe('device installation', () => {
       } } },
     };
 
-    expect(discoverCameraSourcesFromResponses(connector, undefined, false)).toEqual([{
+    expect(discoverCameraSourcesFromResponses(connector, {})).toEqual([{
       ConnectorId: '3',
       Name: 'USB Camera',
       ControlId: null,
       cameraControlMode: 'Off',
       connection: 'unavailable',
       model: undefined,
+    }]);
+  });
+
+  it('uses video connector status for an Ethernet camera without a CameraId and lists it first', () => {
+    const result = discoverCameraSourcesFromResponses(
+      [{
+        id: '2',
+        InputSourceType: 'camera',
+        Name: 'Disconnected Camera',
+        CameraControl: { CameraId: '2', Mode: 'On' },
+      }, {
+        id: '8',
+        InputSourceType: 'camera',
+        Name: 'Ethernet 1',
+        CameraControl: { Mode: 'Off' },
+      }],
+      {
+        cameras: { Camera: [{ id: '2', Connected: 'False', Model: 'Precision 60' }] },
+        videoInputConnectors: { Connector: [{ id: '8', Connected: 'True', Type: 'Ethernet' }] },
+      },
+    );
+
+    expect(result.map(({ ConnectorId, connection }) => ({ ConnectorId, connection }))).toEqual([{
+      ConnectorId: '8',
+      connection: 'connected',
+    }, {
+      ConnectorId: '2',
+      connection: 'disconnected',
     }]);
   });
 
@@ -103,6 +131,35 @@ describe('device installation', () => {
       ControlId: '5',
       connection: 'unavailable',
     }]);
+  });
+
+  it('reads both camera and video connector status through the verified session', async () => {
+    const status = vi.fn(async (path: string) => path === 'Cameras'
+      ? { Camera: [] }
+      : { Connector: [{ id: '8', Connected: 'True', Type: 'Ethernet' }] });
+    const xapi = {
+      config: { get: vi.fn(async () => [{
+        id: '8',
+        InputSourceType: 'camera',
+        Name: 'Ethernet 1',
+        CameraControl: { Mode: 'Off' },
+      }]) },
+      status: { get: status },
+      close: vi.fn(),
+    } as unknown as DeviceXapi;
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify: vi.fn(async () => verifiedDevice),
+    });
+    await session.connect(credentials, 'SERIAL-1');
+
+    await expect(session.discoverCameraSources()).resolves.toMatchObject([{
+      ConnectorId: '8',
+      ControlId: null,
+      connection: 'connected',
+    }]);
+    expect(status).toHaveBeenCalledWith('Cameras');
+    expect(status).toHaveBeenCalledWith('Video Input Connector');
   });
 
   it('reads an installed macro through the verified device socket', async () => {
