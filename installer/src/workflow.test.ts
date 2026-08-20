@@ -389,6 +389,7 @@ describe('configurator workflow presentation', () => {
     expect(source).toContain("type PendingDeviceAction = 'install' | 'fetch-macro' | 'discover-cameras'");
     expect(source).toContain("if (actionAfterConnect === 'discover-cameras') await this.discoverCameras(true);");
     expect(source).toContain('Four-camera limit reached');
+    expect(source).toContain('class="discovered-camera-card discovered-camera-card-${source.connection}"');
     expect(source).toContain('class="discovered-camera-name"');
     expect(source).toContain('class="field-info discovered-camera-info"');
     expect(source).toContain('class="field-tooltip discovered-camera-tooltip"');
@@ -400,6 +401,9 @@ describe('configurator workflow presentation', () => {
     expect(styles).toContain('.discovered-cameras-pane');
     expect(styles).toContain('.discovered-camera-card');
     expect(styles).toMatch(/\.discovered-camera-card \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto 20px;/s);
+    expect(styles).toMatch(/\.discovered-camera-card-connected \{[^}]*border: 2px solid var\(--camera-connected-border\);/s);
+    expect(styles).toMatch(/\.discovered-camera-card-disconnected \{[^}]*border: 2px dotted var\(--camera-disconnected-border\);/s);
+    expect(styles).toMatch(/\.discovered-camera-card-unavailable \{[^}]*border: 2px dotted var\(--camera-unavailable-border\);/s);
     expect(styles).toMatch(/\.discovered-camera-name \{[^}]*white-space: nowrap;/s);
     expect(styles).toMatch(/\.configured-cameras-pane \.camera-grid \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);
     expect(styles).toMatch(/\.camera-fields \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);

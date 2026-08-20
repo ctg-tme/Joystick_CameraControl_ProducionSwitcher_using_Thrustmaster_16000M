@@ -768,7 +768,7 @@ export class ConfiguratorApp {
           ].filter(Boolean).join(' · ');
           const tooltipId = `discovered-camera-help-${index + 1}`;
           return `
-            <article class="discovered-camera-card">
+            <article class="discovered-camera-card discovered-camera-card-${source.connection}">
               <strong class="discovered-camera-name" title="${escapeHtml(name)}">${escapeHtml(name)}</strong>
               <button class="button ${configured ? 'secondary' : 'primary'}" type="button" data-use-discovered-camera="${escapeHtml(source.ConnectorId)}" ${upToDate || atLimit || this.cameraDiscoveryLoading ? 'disabled' : ''}>${atLimit ? 'Four-camera limit reached' : action}</button>
               <span class="field-info discovered-camera-info">

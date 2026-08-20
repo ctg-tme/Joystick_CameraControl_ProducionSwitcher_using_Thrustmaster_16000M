@@ -346,9 +346,9 @@ describe('direct installation connection flow', () => {
         ConnectorId: string;
         Name: string;
         ControlId: string | null;
-        connection: 'connected';
-        cameraControlMode: string;
-        model: string;
+        connection: 'connected' | 'disconnected' | 'unavailable';
+        cameraControlMode?: string;
+        model?: string;
       }>;
       renderDiscoveredCameras(): string;
     };
@@ -359,11 +359,25 @@ describe('direct installation connection flow', () => {
       connection: 'connected',
       cameraControlMode: 'Off',
       model: 'Room Vision PTZ',
+    }, {
+      ConnectorId: '9',
+      Name: 'Presenter',
+      ControlId: '10',
+      connection: 'disconnected',
+      model: 'Precision 60',
+    }, {
+      ConnectorId: '10',
+      Name: 'USB Camera',
+      ControlId: null,
+      connection: 'unavailable',
     }];
 
     const html = testableApp.renderDiscoveredCameras();
 
     expect(html).toContain('<strong class="discovered-camera-name" title="Ethernet 1">Ethernet 1</strong>');
+    expect(html).toContain('class="discovered-camera-card discovered-camera-card-connected"');
+    expect(html).toContain('class="discovered-camera-card discovered-camera-card-disconnected"');
+    expect(html).toContain('class="discovered-camera-card discovered-camera-card-unavailable"');
     expect(html).toContain('data-use-discovered-camera="8"');
     expect(html).toContain('class="field-info discovered-camera-info"');
     expect(html).toContain('Connected · ConnectorId: 8 · ControlId: 9 · Model: Room Vision PTZ');

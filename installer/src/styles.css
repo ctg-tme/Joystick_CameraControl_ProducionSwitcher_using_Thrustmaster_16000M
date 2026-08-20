@@ -14,6 +14,9 @@
   --main: var(--interact-bg-default);
   --preview: var(--accent-g-strong-default);
   --camera: var(--accent-k-strong-default);
+  --camera-connected-border: var(--accent-k-strong-default);
+  --camera-disconnected-border: var(--severe-warning-border-default);
+  --camera-unavailable-border: var(--base-border-strong-default);
   --motion: var(--accent-d-strong-default);
   --selfview: var(--accent-f-strong-default);
   --unused: var(--base-bg-strong-default);
@@ -37,6 +40,7 @@
   --base-bg-strong-default: #a7adb5;
   --base-bg-weak-default: #23282e;
   --base-border-default: #596069;
+  --base-border-strong-default: #c1c6cc;
   --base-text-default: #f7f7f7;
   --base-text-in-default: #23282e;
   --base-text-medium-default: #d0d4d9;
@@ -96,6 +100,7 @@
   --overlay-bg-default: #000000bf;
   --positive-bg-medium-default: #28546a;
   --positive-border-default: #33bbf5;
+  --severe-warning-border-default: #f7782f;
   --warning-bg-medium-default: #5c4d28;
   --warning-border-default: #f0c243;
   --surface-shadow: 0 2px 5px rgb(0 0 0 / 18%);
@@ -1275,6 +1280,18 @@ code {
   border: 1px solid var(--control-border-weak-default);
   border-radius: 8px;
   background: var(--control-bg-weak-default);
+}
+
+.discovered-camera-card-connected {
+  border: 2px solid var(--camera-connected-border);
+}
+
+.discovered-camera-card-disconnected {
+  border: 2px dotted var(--camera-disconnected-border);
+}
+
+.discovered-camera-card-unavailable {
+  border: 2px dotted var(--camera-unavailable-border);
 }
 
 .discovered-camera-name {
