@@ -18,8 +18,8 @@ or implied.
  *                          Cisco Systems Inc
  *
  * Date Created:            July 22, 2026
- * Revised:                 August 19, 2026
- * Version:                 2.0.0
+ * Revised:                 August 20, 2026
+ * Version:                 2.1.0
  *
  * Description:             Standalone Thrustmaster T.16000M camera controller
  *                          and Main/Preview production switcher for RoomOS.
