@@ -1210,13 +1210,13 @@ code {
 
 .camera-source-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr);
-  gap: 22px;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, .75fr);
+  gap: 18px;
   align-items: start;
 }
 
 .configured-cameras-pane .camera-grid {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .camera-pane-heading {
@@ -1246,7 +1246,7 @@ code {
 
 .discovered-cameras-pane {
   min-width: 0;
-  padding-left: 22px;
+  padding-left: 18px;
   border-left: 1px solid var(--line);
 }
 
@@ -1404,8 +1404,10 @@ code {
 }
 
 .camera-card-header code {
-  width: max-content;
+  width: fit-content;
+  max-width: 100%;
   margin-top: 3px;
+  overflow-wrap: anywhere;
 }
 
 .icon-button {
@@ -1431,14 +1433,19 @@ code {
 
 .camera-fields {
   display: grid;
-  grid-template-columns: minmax(160px, 2fr) minmax(110px, .8fr) minmax(170px, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   align-items: start;
   padding: 10px 12px 12px;
 }
 
 .camera-fields .wide {
-  grid-column: auto;
+  grid-column: 1 / -1;
+}
+
+.camera-fields .field-label {
+  width: 100%;
+  flex-wrap: wrap;
 }
 
 .camera-actions {
@@ -2673,6 +2680,10 @@ td code {
     margin-inline: 0;
     padding: 8px 20px;
   }
+
+  .configured-cameras-pane .camera-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2837,6 +2848,16 @@ td code {
 
   .about-details {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .camera-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-fields .wide {
+    grid-column: auto;
   }
 }
 

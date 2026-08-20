@@ -109,6 +109,51 @@ describe('device installation', () => {
     }]);
   });
 
+  it('uses an unmatched xStatus Cameras id when connector configuration omits CameraId', () => {
+    const result = discoverCameraSourcesFromResponses(
+      [{
+        id: '8',
+        InputSourceType: 'camera',
+        Name: 'Ethernet 1',
+        CameraControl: { Mode: 'On' },
+      }, {
+        id: '1',
+        InputSourceType: 'camera',
+        Name: 'Quad Camera',
+        CameraControl: { CameraId: '1', Mode: 'On' },
+      }],
+      {
+        cameras: { Camera: [{
+          id: '1',
+          Connected: 'True',
+          DetectedConnector: '1',
+          Model: 'Quad Camera',
+        }, {
+          id: '9',
+          Connected: 'True',
+          DetectedConnector: '0',
+          Model: 'Room Vision PTZ',
+        }] },
+      },
+    );
+
+    expect(result).toEqual([{
+      ConnectorId: '1',
+      Name: 'Quad Camera',
+      ControlId: '1',
+      cameraControlMode: 'On',
+      connection: 'connected',
+      model: 'Quad Camera',
+    }, {
+      ConnectorId: '8',
+      Name: 'Ethernet 1',
+      ControlId: '9',
+      cameraControlMode: 'On',
+      connection: 'connected',
+      model: 'Room Vision PTZ',
+    }]);
+  });
+
   it('returns configuration-derived cameras when the Cameras status read fails', async () => {
     const xapi = {
       config: { get: vi.fn(async () => [{

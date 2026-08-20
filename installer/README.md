@@ -138,7 +138,7 @@ Before installation, the page:
 - keeps every install or update step visible in a progress modal through readiness, timeout, or failure;
 - warns that the macro runtime restart affects every active macro.
 
-After the same verification, the operator may fetch the installed solution macro with a read-only `Macros Macro Get` command. Macro Settings can instead read `Video Input Connector` configuration, `Cameras` status, and video-input connector status to discover camera sources without fetching a macro or writing any RoomOS input configuration. Camera status is joined by CameraId first; connector status provides the connection fallback for Ethernet and video-only inputs that have no matching CameraId. Local uploads and fetched macros are parsed as data without executing their source.
+After the same verification, the operator may fetch the installed solution macro with a read-only `Macros Macro Get` command. Macro Settings can instead read `Video Input Connector` configuration, `Cameras` status, and video-input connector status to discover camera sources without fetching a macro or writing any RoomOS input configuration. Camera status is joined by CameraId first. If connector configuration omits that value, an unclaimed status camera supplies its `id` as the backup ControlId, preferring a matching DetectedConnector before response order. Connector status provides only the connection fallback when no camera-status entry remains. Local uploads and fetched macros are parsed as data without executing their source.
 
 The browser remembers only the device address and administrator username between
 page loads. Passwords and expected serial numbers are not cached.

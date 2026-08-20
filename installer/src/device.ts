@@ -205,14 +205,43 @@ export function discoverCameraSourcesFromResponses(
     unavailable: 2,
   };
 
-  return connectors
-    .filter((connector) => optionalScalarString(objectField(connector, 'InputSourceType'))?.toLowerCase() === 'camera')
+  const cameraConnectors = connectors.filter(
+    (connector) => optionalScalarString(objectField(connector, 'InputSourceType'))?.toLowerCase() === 'camera',
+  );
+  const configuredControlIds = new Set(cameraConnectors.flatMap((connector) => {
+    const cameraControl = recordValue(objectField(connector, 'CameraControl'));
+    const controlId = optionalScalarString(cameraControl && objectField(cameraControl, 'CameraId'))?.trim();
+    return controlId ? [controlId] : [];
+  }));
+  const unmatchedCameraStatuses = cameras.filter((camera) => {
+    const id = optionalScalarString(objectField(camera, 'id', 'Id'))?.trim();
+    return Boolean(id && !configuredControlIds.has(id));
+  });
+  const takeUnmatchedCameraStatus = (connectorId: string): Record<string, unknown> | undefined => {
+    const detectedConnectorIndex = unmatchedCameraStatuses.findIndex((camera) => (
+      optionalScalarString(objectField(camera, 'DetectedConnector'))?.trim() === connectorId
+    ));
+    const fallbackIndex = detectedConnectorIndex >= 0 ? detectedConnectorIndex : 0;
+    return unmatchedCameraStatuses.splice(fallbackIndex, 1)[0];
+  };
+
+  return cameraConnectors
     .flatMap((connector): DiscoveredCameraSource[] => {
       const connectorId = optionalScalarString(objectField(connector, 'id', 'Id'))?.trim();
       if (!connectorId) return [];
       const cameraControl = recordValue(objectField(connector, 'CameraControl'));
-      const controlId = optionalScalarString(cameraControl && objectField(cameraControl, 'CameraId'))?.trim() || null;
-      const matchedStatus = controlId === null ? undefined : camerasById.get(controlId);
+      const configuredControlId = optionalScalarString(
+        cameraControl && objectField(cameraControl, 'CameraId'),
+      )?.trim() || null;
+      const fallbackStatus = configuredControlId === null
+        ? takeUnmatchedCameraStatus(connectorId)
+        : undefined;
+      const matchedStatus = configuredControlId === null
+        ? fallbackStatus
+        : camerasById.get(configuredControlId);
+      const controlId = configuredControlId
+        ?? optionalScalarString(matchedStatus && objectField(matchedStatus, 'id', 'Id'))?.trim()
+        ?? null;
       const connectorStatus = videoInputConnectorsById.get(connectorId);
       const connection = connectionFromStatus(matchedStatus && objectField(matchedStatus, 'Connected'))
         ?? connectionFromStatus(connectorStatus && objectField(connectorStatus, 'Connected'))

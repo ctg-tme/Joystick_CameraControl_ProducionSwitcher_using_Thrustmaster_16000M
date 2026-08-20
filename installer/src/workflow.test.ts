@@ -390,6 +390,9 @@ describe('configurator workflow presentation', () => {
     expect(styles).toContain('.camera-source-layout');
     expect(styles).toContain('.discovered-cameras-pane');
     expect(styles).toContain('.discovered-camera-card');
+    expect(styles).toMatch(/\.configured-cameras-pane \.camera-grid \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(styles).toMatch(/\.camera-fields \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(styles).toMatch(/\.camera-fields \.wide \{[^}]*grid-column: 1 \/ -1;/s);
   });
 
   it('allows camera-field tooltips to escape the camera card boundary', async () => {
