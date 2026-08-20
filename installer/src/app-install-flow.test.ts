@@ -83,6 +83,7 @@ describe('direct installation connection flow', () => {
         matches: false,
         addEventListener: vi.fn(),
       })),
+      scrollTo: vi.fn(),
       setTimeout,
     });
   });
@@ -252,6 +253,53 @@ describe('direct installation connection flow', () => {
     expect(testableApp.installConfirmationOpen).toBe(true);
     expect(testableApp.renderInstallConfirmationModal()).toContain('Room Kit Pro · RoomOS 26');
     expect(testableApp.renderInstallConfirmationModal()).toContain('No active calls detected');
+  });
+
+  it('opens the connection dialog automatically when entering Review without a verified device', () => {
+    let currentStep: WorkflowNavigation['currentStep'] = 3;
+    const workflow: WorkflowNavigation = {
+      get currentStep() {
+        return currentStep;
+      },
+      initialize: vi.fn(),
+      navigate: vi.fn((step) => {
+        currentStep = step;
+        return true;
+      }),
+      markProgress: vi.fn(),
+    };
+    const session: DeviceInstallationSession = {
+      snapshot: () => ({ connected: false }),
+      connect: vi.fn(),
+      fetchInstalledMacro: vi.fn(),
+      discoverCameraSources: vi.fn(async () => []),
+      recheck: vi.fn(),
+      install: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const app = new ConfiguratorApp(testRoot(), session, workflow);
+    const testableApp = app as unknown as {
+      sources: InstallerSources;
+      catalog: ReleaseCatalog;
+      releaseResolution: MacroReleaseResolution;
+      deviceConnectionOpen: boolean;
+      pendingDeviceAction?: 'install' | 'fetch-macro' | 'discover-cameras';
+      navigateToStep(step: WorkflowNavigation['currentStep']): void;
+    };
+    testableApp.sources = installerSources;
+    testableApp.catalog = catalog;
+    testableApp.releaseResolution = {
+      origin: 'fresh',
+      recognition: 'fresh',
+      targetTag: 'v2.0.0',
+      targetChosenExplicitly: false,
+    };
+
+    testableApp.navigateToStep(4);
+
+    expect(testableApp.deviceConnectionOpen).toBe(true);
+    expect(testableApp.pendingDeviceAction).toBe('install');
+    expect(session.connect).not.toHaveBeenCalled();
   });
 
   it('surfaces an unexpected device disconnect in the UI', () => {

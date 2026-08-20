@@ -265,6 +265,7 @@ export class ConfiguratorApp {
     this.applyTheme();
     this.workflow.initialize({
       onPopState: () => {
+        this.openReviewDeviceConnectionIfNeeded();
         this.render();
         window.scrollTo({ top: 0 });
       },
@@ -281,6 +282,7 @@ export class ConfiguratorApp {
     } catch (error) {
       this.sourceError = error instanceof Error ? error.message : String(error);
     }
+    this.openReviewDeviceConnectionIfNeeded();
     this.render();
   }
 
@@ -333,9 +335,29 @@ export class ConfiguratorApp {
 
   private navigateToStep(step: WorkflowStep, pushHistory = true): void {
     if (!this.workflow.navigate(step, pushHistory)) return;
+    this.openReviewDeviceConnectionIfNeeded();
     this.render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     window.setTimeout(() => this.root.querySelector<HTMLElement>('.workflow-page')?.focus(), 0);
+  }
+
+  private openReviewDeviceConnectionIfNeeded(): void {
+    const session = this.deviceSession.snapshot();
+    if (
+      this.workflow.currentStep !== 4 ||
+      session.connected ||
+      this.deviceConnectionOpen ||
+      this.installConfirmationOpen ||
+      this.installationProgressOpen ||
+      !this.sources ||
+      !this.hasSupportedTarget() ||
+      validateConfiguratorState(this.state).length > 0
+    ) return;
+    this.pendingDeviceAction = 'install';
+    this.deviceConnectionOpen = true;
+    this.errorMessage = '';
+    this.deviceConnectionError = '';
+    this.statusMessage = '';
   }
 
   private cameraById(cameraId: string | undefined): CameraDefinition | undefined {
