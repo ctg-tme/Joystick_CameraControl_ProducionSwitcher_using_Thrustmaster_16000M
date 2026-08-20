@@ -18,8 +18,8 @@ or implied.
  *                          Cisco Systems Inc
  *
  * Date Created:            July 22, 2026
- * Revised:                 August 19, 2026
- * Version:                 2.0.0
+ * Revised:                 August 20, 2026
+ * Version:                 2.1.0
  *
  * Description:             Standalone Thrustmaster T.16000M camera controller
  *                          and Main/Preview production switcher for RoomOS.
@@ -124,7 +124,7 @@ const joystickDemoStatusPageId = `${joystickDemoPanelId}~status`;
 const joystickDemoEnabledWidgetId = `${joystickDemoPanelId}~enabled`;
 const joystickDemoHandednessWidgetId = `${joystickDemoPanelId}~handedness`;
 const joystickDemoEnabledStatusWidgetId = `${joystickDemoPanelId}~statusEnabled`;
-const joystickDemoControlMethodStatusWidgetId = `${joystickDemoPanelId}~statusMethod`;
+const joystickDemoControllingStatusWidgetId = `${joystickDemoPanelId}~statusMethod`;
 const joystickDemoMainStatusWidgetId = `${joystickDemoPanelId}~statusMain`;
 const joystickDemoPreviewStatusWidgetId = `${joystickDemoPanelId}~statusPreview`;
 const joystickDemoPanelIconUrl = `${config.documentation.InstallerUrl.replace(/\/+$/, '')}/icons/joystick-camera-control-512.png`;
@@ -208,10 +208,10 @@ const joystickDemoPanelXml = `<Extensions>
         </Widget>
       </Row>
       <Row>
-        <Name>Control method</Name>
+        <Name>Controlling</Name>
         <Widget>
-          <WidgetId>${joystickDemoControlMethodStatusWidgetId}</WidgetId>
-          <Name>Control method is loading.</Name>
+          <WidgetId>${joystickDemoControllingStatusWidgetId}</WidgetId>
+          <Name>Controlling status is loading.</Name>
           <Type>Text</Type>
           <Options>size=4;fontSize=normal;align=left</Options>
         </Widget>
@@ -467,11 +467,18 @@ function joystickDemoValidateCameraConfig() {
       throw new Error(`${location} requires a non-empty Name`);
     }
 
-    for (const field of ['ConnectorId', 'ControlId']) {
-      const value = camera[field];
-      if (!['string', 'number'].includes(typeof value) || String(value).trim() === '') {
-        throw new Error(`${location} requires a valid ${field}`);
-      }
+    const connectorId = camera.ConnectorId;
+    if (!['string', 'number'].includes(typeof connectorId) || String(connectorId).trim() === '') {
+      throw new Error(`${location} requires a valid ConnectorId`);
+    }
+    if (cameras.some((candidate, candidateIndex) =>
+      candidateIndex < index && String(candidate.ConnectorId).trim() === String(connectorId).trim()
+    )) {
+      throw new Error(`${location} ConnectorId must be unique`);
+    }
+    const controlId = camera.ControlId;
+    if (controlId !== null && !/^(?:[1-9]|1[0-5])$/.test(String(controlId).trim())) {
+      throw new Error(`${location} ControlId must be between 1 and 15 or null`);
     }
 
     joystickDemoCamerasByButtonAction[camera.ButtonAction] = camera;
@@ -592,6 +599,7 @@ function joystickDemoResetInputState() {
  * @roomosxapi https://roomos.cisco.com/xapi/Command.Camera.Ramp/
  */
 function joystickDemoHandlePanTilt(speed) {
+  if (joystickDemoCurrentCamControlId === null) return;
   const currentTilt = joystickDemoAxisState.Y >= 5 ? 'Up' : (joystickDemoAxisState.Y <= -5 ? 'Down' : 'Stop');
   const currentPan = joystickDemoAxisState.RZ >= 5 ? 'Right' : (joystickDemoAxisState.RZ <= -5 ? 'Left' : 'Stop');
 
@@ -634,6 +642,7 @@ function joystickDemoHandlePanTilt(speed) {
  * @roomosxapi https://roomos.cisco.com/xapi/Command.Camera.Ramp/
  */
 function joystickDemoHandleZoom(speed) {
+  if (joystickDemoCurrentCamControlId === null) return;
   // Map: Negative values = In, Positive values = Out
   const currentZoom = joystickDemoAxisState.HAT0Y <= -5 ? 'In' : (joystickDemoAxisState.HAT0Y >= 5 ? 'Out' : 'Stop');
 
@@ -713,7 +722,10 @@ function joystickDemoFormatStatusSection(label, value) {
  * Formats the operator-facing sections shown on the panel's Status page.
  */
 function joystickDemoGetStatusSections() {
-  const controlMethod = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
+  const controllingRole = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
+  const controlling = joystickDemoCurrentCamControlId === null
+    ? `${controllingRole} — video only`
+    : controllingRole;
   const mainCamera = joystickDemoGetNameByConnectorId(joystickDemoCurrentMainVideo) || `Connector ${joystickDemoCurrentMainVideo}`;
   const previewCamera = joystickDemoPreviewIsEnabled()
     ? joystickDemoGetNameByConnectorId(joystickDemoCurrentPreviewVideo) || `Connector ${joystickDemoCurrentPreviewVideo}`
@@ -721,7 +733,7 @@ function joystickDemoGetStatusSections() {
 
   return {
     Enabled: joystickDemoFormatStatusSection('Joystick controls', joystickDemoEnabled ? 'Enabled' : 'Disabled'),
-    ControlMethod: joystickDemoFormatStatusSection('Control method', controlMethod),
+    Controlling: joystickDemoFormatStatusSection('Controlling', controlling),
     Main: joystickDemoFormatStatusSection('Main', mainCamera),
     Preview: joystickDemoFormatStatusSection('Preview', previewCamera)
   };
@@ -740,8 +752,8 @@ async function joystickDemoSyncStatus() {
       Value: sections.Enabled
     }),
     xapi.Command.UserInterface.Extensions.Widget.SetValue({
-      WidgetId: joystickDemoControlMethodStatusWidgetId,
-      Value: sections.ControlMethod
+      WidgetId: joystickDemoControllingStatusWidgetId,
+      Value: sections.Controlling
     }),
     xapi.Command.UserInterface.Extensions.Widget.SetValue({
       WidgetId: joystickDemoMainStatusWidgetId,
@@ -800,8 +812,15 @@ async function joystickDemoSetPreviewVideo(input) {
 
 async function joystickDemoSetCameraControlId(input) {
   await joystickDemoStopCameraMovement();
-  joystickDemoLog(`Joystick control assigned to Camera ${input} (was ${joystickDemoCurrentCamControlId})`);
+  joystickDemoLog(input === null
+    ? `Joystick camera control disabled for the selected video-only source (was ${joystickDemoCurrentCamControlId})`
+    : `Joystick control assigned to Camera ${input} (was ${joystickDemoCurrentCamControlId})`);
   joystickDemoCurrentCamControlId = input;
+  joystickDemoRefreshStatus();
+  if (input === null) {
+    joystickDemoResetInputState();
+    return;
+  }
   joystickDemoUpdateCameraRamp();
 }
 
@@ -812,6 +831,7 @@ async function joystickDemoSetCameraControlId(input) {
  */
 async function joystickDemoStopCameraMovement(continueOnFailure = false) {
   const cameraId = joystickDemoCurrentCamControlId;
+  if (cameraId === null) return;
   const stopCommands = ['Pan', 'Tilt', 'Zoom'].map(axis => ({
     Axis: axis,
     Run: () => xapi.Command.Camera.Ramp({ [axis]: 'Stop', CameraId: cameraId })
@@ -839,7 +859,7 @@ async function joystickDemoSwapMainAndPreviewCameras() {
     return;
   }
 
-  const previousControlMethod = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
+  const previousControlling = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
   const controlledCamera = joystickDemoControlling === 'preview'
     ? joystickDemoGetNameByConnectorId(joystickDemoCurrentPreviewVideo)
     : joystickDemoGetNameByConnectorId(joystickDemoCurrentMainVideo);
@@ -853,8 +873,8 @@ async function joystickDemoSwapMainAndPreviewCameras() {
   joystickDemoCurrentPreviewControl = tempControl;
 
   joystickDemoControlling = joystickDemoControlling === 'main' ? 'preview' : 'main';
-  const nextControlMethod = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
-  joystickDemoLog(`Swapping Main and Preview sources; ${controlledCamera} remains controlled and moves from ${previousControlMethod} to ${nextControlMethod}`);
+  const nextControlling = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
+  joystickDemoLog(`Swapping Main and Preview sources; ${controlledCamera} remains controlled and Controlling changes from ${previousControlling} to ${nextControlling}`);
 
   try {
     await joystickDemoSetMainSourceVideo(joystickDemoCurrentMainVideo);
@@ -877,7 +897,7 @@ function joystickDemoHandlePrecisionMode(state) {
 function joystickDemoHandleControlMain(state, buttonId) {
   if (state !== 'Released') return;
 
-  joystickDemoLog(`${buttonId} selected -> control method set to Live`);
+  joystickDemoLog(`${buttonId} selected -> Controlling set to Live`);
   joystickDemoControlling = 'main';
   joystickDemoRefreshStatus();
   joystickDemoSetCameraControlId(joystickDemoCurrentMainControl)
@@ -891,7 +911,7 @@ function joystickDemoHandleControlPreview(state, buttonId) {
     return;
   }
 
-  joystickDemoLog(`${buttonId} selected -> control method set to Preview`);
+  joystickDemoLog(`${buttonId} selected -> Controlling set to Preview`);
   joystickDemoControlling = 'preview';
   joystickDemoRefreshStatus();
   joystickDemoSetCameraControlId(joystickDemoCurrentPreviewControl)
@@ -1090,7 +1110,7 @@ async function joystickDemoRecoverFromSpeakerTrackActivation() {
   joystickDemoWarn(`SpeakerTrack became active while Joystick Controls was enabled; restoring Main source ${lastMainVideo}`);
 
   // Stop accepting new events before any asynchronous recovery work. Main,
-  // Preview, the control method, handedness, and button mappings stay intact.
+  // Preview, the Controlling role, handedness, and button mappings stay intact.
   joystickDemoEnabled = false;
   try {
     await joystickDemoStopCameraMovement(true);
@@ -1108,8 +1128,8 @@ async function joystickDemoRecoverFromSpeakerTrackActivation() {
 
     await joystickDemoDisableAutomaticCameraTracking();
     await joystickDemoSetMainSourceVideo(lastMainVideo);
-    const controlMethod = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
-    joystickDemoLog(`SpeakerTrack recovery complete -> Main: ${joystickDemoGetNameByConnectorId(lastMainVideo)}, Control method: ${controlMethod}`);
+    const controllingRole = joystickDemoControlling === 'preview' ? 'Preview' : 'Live';
+    joystickDemoLog(`SpeakerTrack recovery complete -> Main: ${joystickDemoGetNameByConnectorId(lastMainVideo)}, Controlling: ${controllingRole}`);
   } finally {
     // Center/release events that arrived while input was paused were discarded,
     // so clear transient state again immediately before reopening the input gate.

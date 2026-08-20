@@ -520,12 +520,13 @@ function drawButtonColumn(page: PDFPage, model: OperatorGuideModel, fonts: Guide
     const buttonLabel = camera.buttonNumbers.length ? `Button ${camera.buttonNumbers.join(', ')}` : 'Not assigned';
     drawFittedText(
       page,
-      `${camera.name}${camera.isDefault ? ' (default)' : ''}`,
+      `${camera.name}${camera.isDefault ? ' (default)' : ''}${camera.videoOnly ? ' — video only' : ''}`,
       x + 10,
       rowY,
       166,
       fonts.bold,
       7.4,
+      camera.videoOnly ? COLORS.warning : COLORS.ink,
     );
     drawFittedText(page, buttonLabel, x + 180, rowY, 62, fonts.regular, 7, COLORS.muted);
   });

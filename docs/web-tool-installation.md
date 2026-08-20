@@ -13,6 +13,7 @@ Use it when you want to:
 - build a fresh configuration without editing JavaScript;
 - resume from a locally saved solution macro;
 - fetch the marked configuration object from an installed macro;
+- discover configured camera inputs and their connection status;
 - assign all 16 physical buttons with guided validation;
 - install or update both required macros on a verified RoomOS device;
 - generate a one-page PDF guide for the room's exact configuration.
@@ -26,7 +27,7 @@ Confirm that you have:
 - a supported RoomOS device with the Thrustmaster T.16000M connected;
 - administrator credentials for the device;
 - the expected device serial number for exact-target verification;
-- one to four camera `ConnectorId` and `ControlId` pairs;
+- one to four camera `ConnectorId` values and optional Camera ControlIds;
 - a free matrix output if Preview will be enabled;
 - a maintenance window in which restarting every active RoomOS macro is acceptable.
 
@@ -42,13 +43,36 @@ Choose one starting point:
 - **Start from Macro** — upload a previously generated solution macro and recover its marked configuration.
 - **Fetch Macro from Device** — connect to the exact RoomOS device and read the installed configuration.
 
+Choose the **Base macro release** beside the heading. A fresh page always starts
+with the latest compatible published stable Release; the choice is kept only in
+the current workflow session. The selected base Release's manifest supplies its
+exact dependency, so there is no separate dependency selector.
+
+Uploads and device fetches both detect the macro's aligned `Version:` header:
+
+- Current sources select the latest Release and are ready to review.
+- Older packaged sources select their matching verified Release pair and offer
+  **Migrate to latest release** while remaining usable before migration.
+- Unknown or unavailable sources retain every valid recovered setting and can
+  still generate the operator guide. Macro download and direct installation are
+  disabled until a supported Release is selected explicitly or migration is
+  confirmed.
+
+Migration preserves the complete configuration, switches only the verified base
+template and dependency pair, and makes no device write or macro-runtime restart.
+An installed source remains in update mode after migration.
+
 Refreshing the browser warns before discarding workflow progress and returns to Introduction.
 
 ### 2. Macro Settings
 
-Set the project and room identity, starting handedness, default-camera behavior, Joystick Controls panel location, Preview display behavior, camera movement speeds, and one to four camera sources.
+Set the project and room identity, starting handedness, default-camera behavior, Joystick Controls panel location, Preview display behavior, camera movement speeds, and one to four camera sources. The form mirrors the macro configuration hierarchy with Documentation, Preview display, User interface, Joystick, nested Camera movement, and Cameras groups. Each field's information tooltip starts with its config-group path, keeping those paths and longer helper text out of the compact form. The camera-movement group labels `SlowModeDivisor` as **Ramp divisor** while preserving the macro property name.
 
-Each camera receives a readable `ButtonAction`, such as `SelectPresenter` or `SelectCamera1`, generated from its name. The action remains separate from the camera's video `ConnectorId` and PTZ `ControlId`.
+Configured cameras remain editable in a two-by-two card grid on the left, with the narrower **Discovered Cameras** pane on the right; the layout stacks at smaller widths. Discovery reads every video input connector whose `InputSourceType` is `camera`, then joins its CameraId to `xStatus Cameras` for connection and model information. When connector configuration omits a CameraId, discovery looks for an `xStatus Cameras` entry whose `id` matches the connector ID and uses that status `id` as the backup ControlId. If no same-ID camera-status entry exists, discovery leaves ControlId Disabled and reports camera status as unavailable. Only `xStatus Cameras` determines whether a discovered camera is connected: an explicit `True` is connected, an explicit `False` is disconnected, and missing or `Unknown` status is unavailable. Connected sources are listed first. A verified connection is reused; otherwise **Discover Cameras** opens the same exact-device connection prompt without fetching the macro. Results are refreshed once per connection, can be refreshed manually, and are cleared when that connection closes.
+
+Discovery never changes the RoomOS video-input name or any other input configuration. Disconnected cameras and sources whose device CameraControl Mode is Off remain addable with warnings. ConnectorIds are unique: adding a matching connector updates its discovered name and ControlId while preserving its default-camera and joystick-button relationships. Multiple sources may share a ControlId.
+
+Each camera receives a readable `ButtonAction`, such as `SelectPresenter` or `SelectCamera1`, generated from its name. The action remains separate from the camera's video `ConnectorId` and optional PTZ `ControlId`. Camera ControlId offers `1` through `15` plus **Disabled (USB/ThirdParty)**; Disabled generates `ControlId: null` so switching continues while joystick camera movement becomes a safe no-op.
 
 ### 3. Button Assignments
 
@@ -76,6 +100,7 @@ Every connection starts in a secure modal without leaving the current workflow p
 The tool:
 
 - connects to the device and compares its serial number with the expected value;
+- uses the same verified connection for camera discovery without fetching the macro;
 - does not display or log the observed serial number;
 - preserves the current workflow page when the connection modal closes;
 - refreshes active-call status before installation confirmation;
@@ -87,7 +112,7 @@ The browser caches only the device address and administrator username. It does n
 
 After verification and confirmation, the Web Installer:
 
-1. retrieves the current `Thrustmaster_16000M-Class.js` source from its separate repository;
+1. loads the selected base Release's verified, packaged `Thrustmaster_16000M-Class.js` dependency;
 2. saves that dependency with the exact macro name `Thrustmaster_16000M-Class` and leaves it inactive;
 3. saves and activates the configured `Joystick_CameraControl_ProductionSwitcher` macro;
 4. restarts the RoomOS macro runtime once, restarting every active macro on the device;
@@ -95,7 +120,7 @@ After verification and confirmation, the Web Installer:
 
 The complete install or update sequence remains visible until the macro reports ready, fails, or times out.
 
-Fetching an installed configuration is read-only. It uses `Macros Macro Get` on an already verified connection and does not restart the macro runtime.
+Fetching an installed configuration is read-only. It uses `Macros Macro Get` on an already verified connection and does not restart the macro runtime. Camera discovery is also read-only: it reads video-input configuration and camera status without writing the input name, CameraId, CameraControl Mode, or any other device setting.
 
 ## Configuration-specific operator guide
 
@@ -105,6 +130,7 @@ The Review page generates a real PDF locally in the browser. The guide is exactl
 - handedness and Preview status;
 - all 16 physical button assignments;
 - configured camera names;
+- video-only labels for sources whose Camera ControlId is Disabled;
 - pan/tilt, zoom, and Precision Mode settings;
 - the joystick control diagram;
 - the RoomOS steps for enabling joystick operation.
@@ -137,3 +163,15 @@ See the [installer development README](../installer/README.md) for asset prepara
 Enable GitHub Pages with **GitHub Actions** as the source. [`.github/workflows/deploy-installer.yml`](../.github/workflows/deploy-installer.yml) tests and builds the installer when `main` changes, then publishes `installer/dist`.
 
 The generated `installer/public/assets` and `installer/dist` directories are not committed.
+
+Each Production Switcher Release must include the repository-root
+`release-manifest.json`. Its intentionally small contract contains only manifest
+`version`, base macro asset name, and dependency `repo`, exact `release`, and
+`asset` name. GitHub metadata supplies publication state, dates, URLs, and
+SHA-256 digests during the static build.
+
+Before publishing every base Release, update the existing aligned `Version:`
+header in `Joystick_CameraControl_ProductionSwitcher.js`. After publishing or
+updating Release assets, manually rerun the Pages workflow so it rebuilds the
+verified same-origin Release catalog. Released PDF guides are not packaged; the
+browser continues generating the room-specific guide.

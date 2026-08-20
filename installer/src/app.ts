@@ -1,13 +1,13 @@
 import {
   generateConfigSource,
   generateConfiguredMacro,
-  parseConfiguratorStateFromMacro,
   PROJECT_REPOSITORY_URL,
   validateConfiguratorState,
 } from './config';
 import {
   createDeviceInstallationSession,
   normalizeDeviceHost,
+  type DiscoveredCameraSource,
   type DeviceCredentials,
   type DeviceInstallationSession,
 } from './device';
@@ -31,7 +31,21 @@ import {
 } from './model';
 import { downloadBinary } from './download';
 import { generateConfiguredOperatorGuide, renderConfiguredPrintSheet } from './manual';
-import { loadDependencySource, loadInstallerSources, type InstallerSources } from './source';
+import {
+  chooseReleaseTarget,
+  createFreshReleaseResolution,
+  ingestMacroSource,
+  isLocalDevelopmentHost,
+  latestCatalogRelease,
+  loadInstallerRelease,
+  loadLocalDevelopmentSources,
+  loadReleaseCatalog,
+  migrateToLatestRelease,
+  type InstallerSources,
+  type MacroReleaseResolution,
+  type MacroSourceOrigin,
+  type ReleaseCatalog,
+} from './source';
 import {
   WORKFLOW_STEPS,
   createWorkflowNavigation,
@@ -46,64 +60,77 @@ const CISCO_SAMPLE_CODE_LICENSE_URL = 'https://developer.cisco.com/docs/licenses
 const PROJECT_README_URL = `${PROJECT_REPOSITORY_URL}#readme`;
 const THEME_STORAGE_KEY = 'joystick-configurator-theme';
 const DEVICE_IDENTITY_STORAGE_KEY = 'joystick-configurator-device-identity';
+const LOCAL_DEVELOPMENT_TARGET = 'local-development';
 
 const CONFIGURATION_DEFINITIONS = {
   projectName: {
     label: 'Project name',
-    optional: true,
+    path: 'config.documentation',
     description: 'The project name used for documentation within the macro. It does not affect operation.',
   },
   roomName: {
     label: 'Room name',
-    optional: true,
+    path: 'config.documentation',
     description: 'The room where the macro will be installed. It is used only for documentation and can help distinguish rooms with different configurations.',
   },
   handedness: {
     label: 'Physical handedness switch',
+    path: 'config.joystick',
     description: 'Updates the macro to match the handedness switch on the bottom of the joystick. If they do not match, the base-button references swap sides.',
   },
   setDefaultCamera: {
     label: 'Set default camera',
-    description: 'Controls whether enabling Joystick Controls sets Main to the configured default camera. Disable it when the operator will choose the Main source manually.',
+    path: 'config.joystick',
+    description: 'Controls whether enabling Joystick Controls sets Main to the configured default camera. Disabled leaves the current Main source unchanged; use it when the operator will choose the Main source manually.',
   },
   panelLocation: {
     label: 'Joystick Controls location',
+    path: 'config.userInterface',
     description: 'Controls where the Joystick Controls UI is available on the RoomOS device. HomeScreenAndCallControls makes it available both outside and during calls.',
   },
   previewMode: {
     label: 'Preview display mode',
-    description: 'Uses the Video Matrix xAPI to reserve a screen output as a local camera Preview display before a source is sent into the call. Enable it only with a free HDMI output; it is not recommended when three displays are actively in use.',
+    path: 'config.previewDisplay',
+    description: 'Uses the Video Matrix xAPI to reserve a screen output as a local camera Preview display before a source is sent into the call. Off prevents all Preview controls, switching, and display commands. Enable it only with a free HDMI output; it is not recommended when three displays are actively in use.',
   },
   previewOutput: {
     label: 'Preview display output',
+    path: 'config.previewDisplay',
     description: 'The HDMI output reserved for the local camera Preview display. Choose only a free output; Preview mode is not recommended when three displays are actively in use.',
   },
   panTiltRampSpeed: {
     label: 'PAN/TILT Ramp Speed',
+    path: 'config.joystick.Camera',
     description: 'The base speed for camera pan and tilt movement. Not all Cisco cameras respect this setting.',
   },
   zoomRampSpeed: {
     label: 'ZOOM Ramp Speed',
+    path: 'config.joystick.Camera',
     description: 'The base speed for camera zoom movement. Not all Cisco cameras respect this setting.',
   },
   slowModeDivisor: {
-    label: 'Precision divisor',
+    label: 'Ramp divisor',
+    path: 'config.joystick.Camera',
     description: 'Divides the PAN/TILT and ZOOM speeds by this value while the Precision mode button is held.',
   },
   cameraName: {
     label: 'Camera name',
+    path: 'config.cameras',
     description: 'A readable name used in the macro, installer, status display, and generated PDF operator guide.',
   },
   videoConnectorId: {
     label: 'Video ConnectorId',
+    path: 'config.cameras',
     description: 'The RoomOS video input connector used to put this camera on Main or Preview.',
   },
   cameraControlId: {
     label: 'Camera ControlId',
-    description: 'The RoomOS camera identifier that receives this camera\'s PAN/TILT and ZOOM commands.',
+    path: 'config.cameras',
+    description: 'The RoomOS camera identifier that receives PAN/TILT and ZOOM commands. Choose Disabled for USB or third-party video-only sources.',
   },
   defaultCamera: {
     label: 'Default camera',
+    path: 'config.joystick',
     description: 'The camera used for the macro\'s default Main, Preview, and joystick-control assignments. Set default camera determines whether enabling Joystick Controls applies it to Main.',
   },
 } as const;
@@ -112,7 +139,7 @@ type ConfigurationDefinitionKey = keyof typeof CONFIGURATION_DEFINITIONS;
 
 type ThemePreference = 'system' | 'light' | 'dark';
 type InstallationMode = 'install' | 'update';
-type PendingDeviceAction = 'install' | 'fetch-macro';
+type PendingDeviceAction = 'install' | 'fetch-macro' | 'discover-cameras';
 
 function storedThemePreference(): ThemePreference {
   try {
@@ -148,10 +175,29 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#039;');
 }
 
+function displayRoomOsVersion(value: string): string {
+  return /^roomos\b/i.test(value.trim()) ? value.trim() : `RoomOS ${value.trim()}`;
+}
+
 function integerOptions(minimum: number, maximum: number, selected: number): string {
   return Array.from({ length: maximum - minimum + 1 }, (_, index) => minimum + index)
     .map((value) => `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`)
     .join('');
+}
+
+function isSupportedCameraControlId(selected: string | null): boolean {
+  return selected === null || /^(?:[1-9]|1[0-5])$/.test(selected.trim());
+}
+
+function cameraControlOptions(selected: string | null): string {
+  const supported = isSupportedCameraControlId(selected);
+  const unsupported = !supported
+    ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)} (unsupported)</option>`
+    : '';
+  return `${unsupported}<option value="" ${selected === null ? 'selected' : ''}>Disabled (USB/ThirdParty)</option>${Array.from(
+    { length: 15 },
+    (_, index) => String(index + 1),
+  ).map((value) => `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`).join('')}`;
 }
 
 function downloadText(fileName: string, content: string, type = 'text/javascript;charset=utf-8'): void {
@@ -173,6 +219,9 @@ export class ConfiguratorApp {
   private state: ConfiguratorState = createDefaultState();
   private themePreference: ThemePreference = storedThemePreference();
   private readonly systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+  private catalog?: ReleaseCatalog;
+  private releaseResolution?: MacroReleaseResolution;
+  private readonly releaseSourceCache = new Map<string, InstallerSources>();
   private sources?: InstallerSources;
   private sourceError = '';
   private credentials: DeviceCredentials = storedDeviceCredentials();
@@ -187,19 +236,36 @@ export class ConfiguratorApp {
   private busy = false;
   private statusMessage = '';
   private errorMessage = '';
+  private deviceConnectionError = '';
   private configurationMessage = '';
   private configurationError = '';
+  private discoveredCameras: DiscoveredCameraSource[] = [];
+  private cameraDiscoveryHost?: string;
+  private cameraDiscoveryLoading = false;
+  private cameraDiscoveryScheduled = false;
+  private cameraDiscoveryError = '';
+  private cameraMessage = '';
 
   constructor(
     private readonly root: HTMLElement,
     private readonly deviceSession: DeviceInstallationSession = createDeviceInstallationSession(),
     private readonly workflow: WorkflowNavigation = createWorkflowNavigation(),
-  ) {}
+  ) {
+    this.deviceSession.onConnectionLost?.((message) => {
+      this.clearCameraDiscovery();
+      this.installConfirmationOpen = false;
+      this.deviceConnectionError = message;
+      this.errorMessage = message;
+      this.statusMessage = 'The verified device connection ended unexpectedly.';
+      this.render();
+    });
+  }
 
   async initialize(): Promise<void> {
     this.applyTheme();
     this.workflow.initialize({
       onPopState: () => {
+        this.openReviewDeviceConnectionIfNeeded();
         this.render();
         window.scrollTo({ top: 0 });
       },
@@ -210,10 +276,13 @@ export class ConfiguratorApp {
     });
     this.render();
     try {
-      this.sources = await loadInstallerSources();
+      this.catalog = await loadReleaseCatalog();
+      this.releaseResolution = createFreshReleaseResolution(this.catalog);
+      this.sources = await this.loadReleaseSources(this.catalog.latest);
     } catch (error) {
       this.sourceError = error instanceof Error ? error.message : String(error);
     }
+    this.openReviewDeviceConnectionIfNeeded();
     this.render();
   }
 
@@ -222,6 +291,7 @@ export class ConfiguratorApp {
       ? (this.systemTheme.matches ? 'dark' : 'light')
       : this.themePreference;
     document.documentElement.dataset.theme = effectiveTheme;
+    document.documentElement.dataset.cdsTheme = `magnetic-${effectiveTheme}`;
     document.documentElement.dataset.themePreference = this.themePreference;
     document.documentElement.style.colorScheme = effectiveTheme;
   }
@@ -236,11 +306,59 @@ export class ConfiguratorApp {
     this.applyTheme();
   }
 
+  private async loadReleaseSources(tag: string): Promise<InstallerSources> {
+    if (!this.catalog) throw new Error('The installer Release catalog is not available.');
+    const cached = this.releaseSourceCache.get(tag);
+    if (cached) return cached;
+    const sources = await loadInstallerRelease(this.catalog, tag);
+    this.releaseSourceCache.set(sources.release.tag, sources);
+    return sources;
+  }
+
+  private async loadLocalSources(): Promise<InstallerSources> {
+    if (!this.catalog) throw new Error('The installer Release catalog is not available.');
+    if (!isLocalDevelopmentHost(window.location?.hostname ?? '')) {
+      throw new Error('Local development sources are available only on localhost or 127.0.0.1.');
+    }
+    const cached = this.releaseSourceCache.get(LOCAL_DEVELOPMENT_TARGET);
+    if (cached) return cached;
+    const sources = await loadLocalDevelopmentSources(this.catalog);
+    this.releaseSourceCache.set(LOCAL_DEVELOPMENT_TARGET, sources);
+    return sources;
+  }
+
+  private hasSupportedTarget(): boolean {
+    return Boolean(
+      this.releaseResolution?.targetTag &&
+      this.sources?.release.tag === this.releaseResolution.targetTag,
+    );
+  }
+
   private navigateToStep(step: WorkflowStep, pushHistory = true): void {
     if (!this.workflow.navigate(step, pushHistory)) return;
+    this.openReviewDeviceConnectionIfNeeded();
     this.render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     window.setTimeout(() => this.root.querySelector<HTMLElement>('.workflow-page')?.focus(), 0);
+  }
+
+  private openReviewDeviceConnectionIfNeeded(): void {
+    const session = this.deviceSession.snapshot();
+    if (
+      this.workflow.currentStep !== 4 ||
+      session.connected ||
+      this.deviceConnectionOpen ||
+      this.installConfirmationOpen ||
+      this.installationProgressOpen ||
+      !this.sources ||
+      !this.hasSupportedTarget() ||
+      validateConfiguratorState(this.state).length > 0
+    ) return;
+    this.pendingDeviceAction = 'install';
+    this.deviceConnectionOpen = true;
+    this.errorMessage = '';
+    this.deviceConnectionError = '';
+    this.statusMessage = '';
   }
 
   private cameraById(cameraId: string | undefined): CameraDefinition | undefined {
@@ -359,38 +477,73 @@ export class ConfiguratorApp {
 
   private renderWorkflowActions(): string {
     const currentStep = this.workflow.currentStep;
-    if (currentStep === 1) return '';
     const previous = currentStep > 1 ? (currentStep - 1) as WorkflowStep : undefined;
     const next = currentStep < WORKFLOW_STEPS.length ? (currentStep + 1) as WorkflowStep : undefined;
+    const nextDisabled = currentStep === 2 && validateConfiguratorState(this.state).length > 0;
     return `
       <footer class="workflow-actions no-print">
         <span>Page ${currentStep} of ${WORKFLOW_STEPS.length}</span>
         <div>
           ${previous ? `<button class="button secondary" type="button" data-workflow-step="${previous}">Back</button>` : ''}
-          ${next ? `<button class="button primary" type="button" data-workflow-step="${next}">Continue to ${WORKFLOW_STEPS[next - 1].title}</button>` : ''}
+          ${next ? `<button class="button primary" type="button" data-workflow-step="${next}" ${nextDisabled ? 'disabled' : ''}>Continue to ${WORKFLOW_STEPS[next - 1].title}</button>` : ''}
         </div>
       </footer>`;
   }
 
   private renderReviewActions(): string {
     const configurationIsValid = validateConfiguratorState(this.state).length === 0;
+    const hasSupportedTarget = this.hasSupportedTarget();
     const session = this.deviceSession.snapshot();
+    const verifiedDevice = session.verifiedDevice;
+    const installResult = session.installationResult;
     const isUpdate = this.installationMode === 'update';
     const deviceAction = isUpdate ? 'Update Macro' : 'Install Macro';
     const deviceDescription = session.connected
       ? `${isUpdate ? 'Update' : 'Install'} the macro on the verified ${escapeHtml(session.verifiedDevice?.productPlatform ?? 'RoomOS device')}.`
       : `Connect directly to the target RoomOS device, verify it, and ${isUpdate ? 'update' : 'install'} the solution.`;
+    const canPromptInstall = Boolean(
+      session.connected &&
+      verifiedDevice?.serialMatches &&
+      hasSupportedTarget &&
+      configurationIsValid &&
+      !this.busy,
+    );
+    const canConnect = hasSupportedTarget && configurationIsValid && !this.busy;
     return `
       <section class="review-action-grid" aria-label="Installation and download options">
         <article class="review-action primary-action">
           <span class="review-action-number">1</span>
           <div><h2>Download Macro</h2><p>Save the configured JavaScript macro for a manual RoomOS upload.</p></div>
-          <button class="button primary" id="download-macro" type="button" ${this.sources && configurationIsValid ? '' : 'disabled'}>Download Macro</button>
+          <button class="button primary" id="download-macro" type="button" ${hasSupportedTarget && configurationIsValid ? '' : 'disabled'}>Download Macro</button>
         </article>
-        <article class="review-action">
+        <article class="review-action device-action">
           <span class="review-action-number">2</span>
-          <div><h2>${deviceAction}</h2><p>${deviceDescription}</p></div>
-          <button class="button secondary" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${configurationIsValid ? '' : 'disabled'}>${deviceAction}</button>
+          <div>
+            <h2>${deviceAction}</h2>
+            <p>${deviceDescription}</p>
+            ${verifiedDevice ? `
+              <div class="review-device-status ${verifiedDevice.serialMatches && verifiedDevice.activeCalls === 0 ? 'success' : 'error'}" role="status" aria-live="polite">
+                <strong>${verifiedDevice.serialMatches ? 'Serial confirmed' : 'Serial mismatch — installation blocked'}</strong>
+                <span>${escapeHtml(verifiedDevice.productPlatform)} · ${escapeHtml(displayRoomOsVersion(verifiedDevice.roomOsVersion))}</span>
+                <span>${verifiedDevice.activeCalls === 0 ? 'No active calls' : `${verifiedDevice.activeCalls} active call(s) — installation blocked`}</span>
+              </div>` : `
+              <div class="review-device-status neutral" role="status" aria-live="polite">
+                <strong>Not connected</strong>
+                <span>Connect and verify the exact device before installation.</span>
+              </div>`}
+            ${!session.connected && this.deviceConnectionError ? `
+              <div class="callout error" role="alert"><strong>Verified device connection ended</strong><p>${escapeHtml(this.deviceConnectionError)}</p></div>
+            ` : ''}
+            ${installResult ? `
+              <div class="review-install-result ${installResult.kind === 'ready' ? 'success' : installResult.kind === 'failed' ? 'error' : 'warning'}" role="status" aria-live="polite">
+                <strong>${installResult.kind === 'ready' ? 'Installation ready' : installResult.kind === 'failed' ? 'Initialization failed' : 'Initialization not confirmed'}</strong>
+                <span>${escapeHtml(installResult.message)}</span>
+              </div>` : ''}
+          </div>
+          <div class="review-action-buttons">
+            <button class="button secondary" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${session.connected ? (canPromptInstall ? '' : 'disabled') : (canConnect ? '' : 'disabled')}>${deviceAction}</button>
+            ${session.connected ? '<button class="button secondary" id="disconnect-device" type="button">Disconnect</button>' : ''}
+          </div>
         </article>
         <article class="review-action">
           <span class="review-action-number">3</span>
@@ -410,10 +563,96 @@ export class ConfiguratorApp {
           <span class="section-kicker">04 · Review</span>
           <h1>Review and installation</h1>
           <p>Confirm the generated configuration, then choose how you want to deliver the solution.</p>
+          ${this.renderSelectedReleaseSummary()}
         </header>
         ${this.renderReviewActions()}
         ${this.renderOutput()}
-        ${this.renderInstaller()}
+      </div>`;
+  }
+
+  private renderReleaseSelector(): string {
+    if (!this.catalog) {
+      return `
+        <label class="release-picker" for="base-macro-release">
+          <span>Choose Release</span>
+          <select id="base-macro-release" disabled><option>${this.sourceError ? 'Unavailable' : 'Loading…'}</option></select>
+        </label>`;
+    }
+    const selectedTag = this.releaseResolution?.targetTag;
+    const localDevelopment = isLocalDevelopmentHost(window.location?.hostname ?? '')
+      ? this.catalog.localDevelopment
+      : undefined;
+    const localSelected = this.sources?.kind === 'local-development';
+    const unresolvedLabel = this.releaseResolution?.recognition === 'unavailable'
+      ? `Imported macro · ${this.releaseResolution.detectedTag} unavailable`
+      : 'Imported macro · Release unknown';
+    return `
+      <label class="release-picker" for="base-macro-release">
+        <span>Choose Release</span>
+        <select id="base-macro-release" ${this.busy ? 'disabled' : ''}>
+          ${selectedTag ? '' : `<option value="" selected disabled>${escapeHtml(unresolvedLabel)}</option>`}
+          ${localDevelopment ? `<option value="${LOCAL_DEVELOPMENT_TARGET}" ${localSelected ? 'selected' : ''}>Local Development · Macro Version ${escapeHtml(localDevelopment.macroVersion)}</option>` : ''}
+          ${this.catalog.releases.map((release) => `
+            <option value="${escapeHtml(release.tag)}" ${!localSelected && release.tag === selectedTag ? 'selected' : ''}>${escapeHtml(release.tag)}${release.tag === this.catalog?.latest ? ' · Latest' : ''}</option>`).join('')}
+        </select>
+      </label>`;
+  }
+
+  private renderSelectedReleaseSummary(): string {
+    const release = this.sources?.release;
+    if (!release || !this.hasSupportedTarget()) {
+      return '<p class="selected-release-summary warning">Target Release: choose a supported Release before downloading or installing macros.</p>';
+    }
+    const dependencies = release.dependencies
+      .map((dependency) => `${dependency.fileName} ${dependency.release}`)
+      .join(', ');
+    if (this.sources?.kind === 'local-development') {
+      return `<p class="selected-release-summary"><strong>Target:</strong> Local Development <span>· Macro Version ${escapeHtml(release.tag)} · ${escapeHtml(dependencies)}</span></p>`;
+    }
+    return `<p class="selected-release-summary"><strong>Target Release:</strong> ${escapeHtml(release.tag)} <span>· ${escapeHtml(dependencies)}</span></p>`;
+  }
+
+  private renderSourceReleaseStatus(): string {
+    const resolution = this.releaseResolution;
+    const catalog = this.catalog;
+    if (!resolution || !catalog || resolution.origin === 'fresh') return '';
+    const detected = resolution.detectedTag ?? 'Unknown';
+    const target = resolution.targetTag;
+    let sentiment = 'success';
+    let heading = 'Source release is current';
+    let message = `${detected} matches the latest supported Release.`;
+
+    if (this.sources?.kind === 'local-development' && target) {
+      heading = 'Local development target selected';
+      message = `The recovered configuration now uses the working-tree macro (Macro Version ${target}); no device changes were made.`;
+    } else if (resolution.recognition === 'older') {
+      sentiment = 'warning';
+      heading = 'Source release is older';
+      message = target
+        ? `${detected} is loaded with its verified dependency pair. ${catalog.latest} is available.`
+        : `${detected} was detected, but no supported target is selected.`;
+    } else if (resolution.recognition === 'unknown') {
+      sentiment = target ? 'success' : 'warning';
+      heading = target ? 'Supported migration target selected' : 'Source release is unknown';
+      message = target
+        ? `The source version could not be identified. Its recovered configuration now targets ${target}.`
+        : `The configuration was recovered, but downloading and installation require an explicit supported target.`;
+    } else if (resolution.recognition === 'unavailable') {
+      sentiment = target ? 'success' : 'warning';
+      heading = target ? 'Supported migration target selected' : 'Source release is unavailable';
+      message = target
+        ? `${detected} is not packaged. Its recovered configuration now targets ${target}.`
+        : `${detected} is not packaged. The configuration remains editable, but downloading and installation require an explicit supported target.`;
+    } else if (resolution.targetChosenExplicitly && target) {
+      heading = 'Release target changed';
+      message = `The recovered configuration now targets ${target}; no device changes were made.`;
+    }
+
+    const offerLatest = !target || target !== catalog.latest;
+    return `
+      <div class="callout ${sentiment} release-status" role="status">
+        <div><strong>${escapeHtml(heading)}</strong><p>${escapeHtml(message)}</p></div>
+        ${offerLatest ? `<button class="button secondary" id="migrate-latest-release" type="button" ${this.busy ? 'disabled' : ''}>Migrate to latest release (${escapeHtml(catalog.latest)})</button>` : ''}
       </div>`;
   }
 
@@ -422,35 +661,33 @@ export class ConfiguratorApp {
     return `
       <header class="hero">
         <div class="hero-copy">
-          <span class="eyebrow">RoomOS joystick camera control</span>
+          <span class="eyebrow">Cisco RoomOS macro solution</span>
           <h1>Joystick Camera Control Production Switcher</h1>
           <p class="hero-summary">Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a simple Main/Preview production workflow without a separate control computer.</p>
-          <ul class="solution-highlights" aria-label="Solution highlights">
-            <li><strong>Direct camera control</strong><span>Pan, tilt, and zoom supported Cisco cameras from the joystick.</span></li>
-            <li><strong>Main and Preview</strong><span>Take a source live or stage it locally before swapping it to Main.</span></li>
-            <li><strong>One to four cameras</strong><span>Name each source and assign the T.16000M buttons for the room.</span></li>
-          </ul>
           <p class="hero-read-more"><a id="project-readme-link" href="${PROJECT_README_URL}" target="_blank" rel="noreferrer">Read the project README <span aria-hidden="true">↗</span></a> for the complete feature set, requirements, operator workflow, and manual setup.</p>
           <section class="installer-introduction no-print" aria-labelledby="choose-start-title">
-            <span class="eyebrow">Start with the Web Installer</span>
-            <h2 id="choose-start-title">Choose how to begin</h2>
+            <div class="installer-introduction-heading">
+              <div><span class="eyebrow">Start with the Web Installer</span><h2 id="choose-start-title">Choose how to begin</h2></div>
+              ${this.renderReleaseSelector()}
+            </div>
             <p>Configure every button, install or update both RoomOS macros, and download a room-specific PDF operator guide.</p>
             <div class="installation-paths no-print" aria-label="Choose how to begin">
               <article>
                 <div><strong>Fresh Installation</strong><p>Start with the documented defaults, then configure the room and cameras.</p></div>
-                <button class="button primary" id="fresh-installation" type="button">Fresh Installation</button>
+                <button class="button primary" id="fresh-installation" type="button" ${this.catalog && !this.busy ? '' : 'disabled'}>Fresh Installation</button>
               </article>
               <article>
                 <div><strong>Start from Macro</strong><p>Load settings from a macro file without executing its source.</p></div>
                 <label class="button secondary file-button">Start from Macro
-                  <input id="import-macro-file" type="file" accept=".js,.txt,text/javascript">
+                  <input id="import-macro-file" type="file" accept=".js,.txt,text/javascript" ${this.catalog && !this.busy ? '' : 'disabled'}>
                 </label>
               </article>
               <article>
                 <div><strong>Fetch Macro from Device</strong><p>${connected ? 'Read the installed macro from the verified device.' : 'Connect to a device, verify it, and read its installed macro.'}</p></div>
-                <button class="button secondary" id="begin-device-macro-fetch" type="button" ${this.sources && !this.busy ? '' : 'disabled'}>Fetch Macro from Device</button>
+                <button class="button secondary" id="begin-device-macro-fetch" type="button" ${this.catalog && !this.busy ? '' : 'disabled'}>Fetch Macro from Device</button>
               </article>
             </div>
+            ${this.renderSourceReleaseStatus()}
           </section>
           ${this.configurationMessage ? `<div class="callout success introduction-callout"><strong>Configuration loaded</strong><p>${escapeHtml(this.configurationMessage)}</p></div>` : ''}
           ${this.configurationError ? `<div class="callout error introduction-callout"><strong>Configuration not loaded</strong><p>${escapeHtml(this.configurationError)}</p></div>` : ''}
@@ -460,6 +697,11 @@ export class ConfiguratorApp {
             <img src="./assets/infocomm-2026-joystick-demo.png" alt="An operator controlling a camera with the Thrustmaster T.16000M at InfoComm 2026">
             <figcaption>The joystick camera-control experience demonstrated at InfoComm 2026.</figcaption>
           </figure>
+          <ul class="solution-highlights" aria-label="Solution highlights">
+            <li><strong>Direct camera control</strong><span>Pan, tilt, and zoom supported Cisco cameras from the joystick.</span></li>
+            <li><strong>Main and Preview</strong><span>Take a source live or stage it locally before swapping it to Main.</span></li>
+            <li><strong>One to four cameras</strong><span>Name each source and assign the T.16000M buttons for the room.</span></li>
+          </ul>
           <aside class="purpose-checklist" aria-labelledby="purpose-checklist-title">
             <span class="eyebrow">Purpose-built solution</span>
             <h2 id="purpose-checklist-title">What to know before you begin</h2>
@@ -482,38 +724,76 @@ export class ConfiguratorApp {
           <div><span class="section-kicker">02 · Settings</span><h1>Macro settings</h1></div>
           <p>These values drive the macro and the printable guide.</p>
         </div>
-        <div class="settings-grid">
-          <label class="field project-field">${this.renderConfigurationLabel('projectName')}<input data-setting="projectName" value="${escapeHtml(this.state.projectName)}"></label>
-          <label class="field">${this.renderConfigurationLabel('roomName')}<input data-setting="roomName" value="${escapeHtml(this.state.roomName)}"></label>
-          <label class="field">${this.renderConfigurationLabel('handedness')}
-            <select data-setting="handedness">
-              <option value="right" ${this.state.handedness === 'right' ? 'selected' : ''}>Right-handed</option>
-              <option value="left" ${this.state.handedness === 'left' ? 'selected' : ''}>Left-handed</option>
-            </select>
-          </label>
-          <label class="field">${this.renderConfigurationLabel('setDefaultCamera')}
-            <select data-setting="setDefaultCamera">
-              <option value="true" ${this.state.setDefaultCamera ? 'selected' : ''}>Enabled</option>
-              <option value="false" ${!this.state.setDefaultCamera ? 'selected' : ''}>Disabled</option>
-            </select>
-            <small>Disabled leaves the current Main source unchanged when Joystick Controls is enabled.</small>
-          </label>
-          <label class="field">${this.renderConfigurationLabel('panelLocation')}
-            <select data-setting="panelLocation">
-              ${PANEL_LOCATIONS.map((location) => `<option value="${location}" ${this.state.panelLocation === location ? 'selected' : ''}>${location}</option>`).join('')}
-            </select>
-          </label>
-          <label class="field">${this.renderConfigurationLabel('previewMode')}
-            <select data-setting="previewMode">
-              <option value="On" ${this.state.previewMode === 'On' ? 'selected' : ''}>On</option>
-              <option value="Off" ${this.state.previewMode === 'Off' ? 'selected' : ''}>Off</option>
-            </select>
-            <small>Off prevents all Preview controls, switching, and display commands.</small>
-          </label>
-          <label class="field">${this.renderConfigurationLabel('previewOutput')}<select data-setting="previewOutput">${integerOptions(1, 3, this.state.previewOutput)}</select></label>
-          <label class="field">${this.renderConfigurationLabel('panTiltRampSpeed')}<select data-setting="panTiltRampSpeed">${integerOptions(1, 24, this.state.panTiltRampSpeed)}</select></label>
-          <label class="field">${this.renderConfigurationLabel('zoomRampSpeed')}<select data-setting="zoomRampSpeed">${integerOptions(1, 15, this.state.zoomRampSpeed)}</select></label>
-          <label class="field">${this.renderConfigurationLabel('slowModeDivisor')}<select data-setting="slowModeDivisor">${integerOptions(1, 4, this.state.slowModeDivisor)}</select></label>
+        <div class="settings-groups">
+          <section class="settings-group settings-group-documentation" aria-labelledby="settings-documentation-title">
+            <header class="settings-group-heading">
+              <h2 id="settings-documentation-title">Documentation</h2>
+            </header>
+            <div class="settings-field-grid">
+              <label class="field">${this.renderConfigurationLabel('projectName')}<input data-setting="projectName" value="${escapeHtml(this.state.projectName)}"></label>
+              <label class="field">${this.renderConfigurationLabel('roomName')}<input data-setting="roomName" value="${escapeHtml(this.state.roomName)}"></label>
+            </div>
+          </section>
+          <section class="settings-group settings-group-preview" aria-labelledby="settings-preview-title">
+            <header class="settings-group-heading">
+              <h2 id="settings-preview-title">Preview display</h2>
+            </header>
+            <div class="settings-field-grid">
+              <label class="field">${this.renderConfigurationLabel('previewMode')}
+                <select data-setting="previewMode">
+                  <option value="On" ${this.state.previewMode === 'On' ? 'selected' : ''}>On</option>
+                  <option value="Off" ${this.state.previewMode === 'Off' ? 'selected' : ''}>Off</option>
+                </select>
+              </label>
+              <label class="field">${this.renderConfigurationLabel('previewOutput')}<select data-setting="previewOutput">${integerOptions(1, 3, this.state.previewOutput)}</select></label>
+            </div>
+          </section>
+          <section class="settings-group settings-group-user-interface" aria-labelledby="settings-user-interface-title">
+            <header class="settings-group-heading">
+              <h2 id="settings-user-interface-title">User interface</h2>
+            </header>
+            <div class="settings-field-grid">
+              <label class="field">${this.renderConfigurationLabel('panelLocation')}
+                <select data-setting="panelLocation">
+                  ${PANEL_LOCATIONS.map((location) => `<option value="${location}" ${this.state.panelLocation === location ? 'selected' : ''}>${location}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+          </section>
+          <section class="settings-group settings-group-joystick" aria-labelledby="settings-joystick-title">
+            <header class="settings-group-heading">
+              <h2 id="settings-joystick-title">Joystick</h2>
+            </header>
+            <div class="settings-field-grid settings-field-grid-three">
+              <label class="field">${this.renderConfigurationLabel('handedness')}
+                <select data-setting="handedness">
+                  <option value="right" ${this.state.handedness === 'right' ? 'selected' : ''}>Right-handed</option>
+                  <option value="left" ${this.state.handedness === 'left' ? 'selected' : ''}>Left-handed</option>
+                </select>
+              </label>
+              <label class="field">${this.renderConfigurationLabel('setDefaultCamera')}
+                <select data-setting="setDefaultCamera">
+                  <option value="true" ${this.state.setDefaultCamera ? 'selected' : ''}>Enabled</option>
+                  <option value="false" ${!this.state.setDefaultCamera ? 'selected' : ''}>Disabled</option>
+                </select>
+              </label>
+              <label class="field">${this.renderConfigurationLabel('defaultCamera')}
+                <select id="default-camera">
+                  ${this.state.cameras.map((camera) => `<option value="${escapeHtml(camera.id)}" ${camera.id === this.state.defaultCameraId ? 'selected' : ''}>${escapeHtml(camera.Name || 'Unnamed camera')}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+            <section class="settings-subgroup" aria-labelledby="settings-camera-movement-title">
+              <header class="settings-group-heading settings-subgroup-heading">
+                <h3 id="settings-camera-movement-title">Camera movement</h3>
+              </header>
+              <div class="settings-field-grid settings-field-grid-three">
+                <label class="field">${this.renderConfigurationLabel('panTiltRampSpeed')}<select data-setting="panTiltRampSpeed">${integerOptions(1, 24, this.state.panTiltRampSpeed)}</select></label>
+                <label class="field">${this.renderConfigurationLabel('zoomRampSpeed')}<select data-setting="zoomRampSpeed">${integerOptions(1, 15, this.state.zoomRampSpeed)}</select></label>
+                <label class="field">${this.renderConfigurationLabel('slowModeDivisor')}<select data-setting="slowModeDivisor">${integerOptions(1, 4, this.state.slowModeDivisor)}</select></label>
+              </div>
+            </section>
+          </section>
         </div>
       </section>
       ${this.renderCameras()}
@@ -525,48 +805,110 @@ export class ConfiguratorApp {
     return `
       <section class="panel section no-print" id="cameras">
         <div class="section-heading">
-          <div><span class="section-kicker">Camera sources</span><h2>Configure camera sources</h2></div>
+          <div><h2>Configure camera sources</h2></div>
           <p>Camera ButtonAction names are generated automatically and become choices in every button dropdown.</p>
         </div>
-        <div class="camera-grid">
-          ${this.state.cameras.map((camera, index) => `
-            <article class="camera-card">
-              <div class="camera-card-header">
-                <span class="camera-number">${index + 1}</span>
-                <div><strong>${escapeHtml(camera.Name || `Camera ${index + 1}`)}</strong><code>${escapeHtml(cameraActions.get(camera.id) ?? '')}</code></div>
-                <button class="icon-button" type="button" data-remove-camera="${escapeHtml(camera.id)}" ${this.state.cameras.length === 1 ? 'disabled' : ''} aria-label="Remove ${escapeHtml(camera.Name || 'camera')}">×</button>
-              </div>
-              <div class="camera-fields">
-                <label class="field wide">${this.renderConfigurationLabel('cameraName', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="Name" value="${escapeHtml(camera.Name)}"></label>
-                <label class="field">${this.renderConfigurationLabel('videoConnectorId', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="ConnectorId" inputmode="numeric" value="${escapeHtml(camera.ConnectorId)}"></label>
-                <label class="field">${this.renderConfigurationLabel('cameraControlId', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="ControlId" inputmode="numeric" value="${escapeHtml(camera.ControlId)}"></label>
-              </div>
-            </article>`).join('')}
-        </div>
-        <div class="camera-actions">
-          <button class="button secondary" id="add-camera" type="button" ${this.state.cameras.length >= 4 ? 'disabled' : ''}>Add camera</button>
-          <label class="field default-camera">${this.renderConfigurationLabel('defaultCamera')}
-            <select id="default-camera">
-              ${this.state.cameras.map((camera) => `<option value="${escapeHtml(camera.id)}" ${camera.id === this.state.defaultCameraId ? 'selected' : ''}>${escapeHtml(camera.Name || 'Unnamed camera')}</option>`).join('')}
-            </select>
-          </label>
+        <div class="camera-source-layout">
+          <div class="configured-cameras-pane">
+            <div class="camera-pane-heading"><h3>Configured cameras</h3><span>${this.state.cameras.length} of 4</span></div>
+            <div class="camera-grid">
+              ${this.state.cameras.map((camera, index) => {
+                const unsupportedControlId = !isSupportedCameraControlId(camera.ControlId);
+                return `<article class="camera-card">
+                  <div class="camera-card-header">
+                    <span class="camera-number">${index + 1}</span>
+                    <div><strong>${escapeHtml(camera.Name || `Camera ${index + 1}`)}</strong><code>${escapeHtml(cameraActions.get(camera.id) ?? '')}</code></div>
+                    <button class="icon-button" type="button" data-remove-camera="${escapeHtml(camera.id)}" ${this.state.cameras.length === 1 ? 'disabled' : ''} aria-label="Remove ${escapeHtml(camera.Name || 'camera')}">×</button>
+                  </div>
+                  <div class="camera-fields">
+                    <label class="field wide">${this.renderConfigurationLabel('cameraName', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="Name" value="${escapeHtml(camera.Name)}"></label>
+                    <label class="field">${this.renderConfigurationLabel('videoConnectorId', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="ConnectorId" inputmode="numeric" value="${escapeHtml(camera.ConnectorId)}"></label>
+                    <label class="field">${this.renderConfigurationLabel('cameraControlId', camera.id)}<select data-camera-id="${escapeHtml(camera.id)}" data-camera-field="ControlId" ${unsupportedControlId ? 'aria-invalid="true"' : ''}>${cameraControlOptions(camera.ControlId)}</select>${camera.ControlId === null ? '<small>Video only — joystick camera control unavailable.</small>' : ''}${unsupportedControlId ? '<small class="field-validation-error">Unsupported ControlId — choose 1–15 or Disabled before continuing.</small>' : ''}</label>
+                  </div>
+                </article>`;
+              }).join('')}
+            </div>
+            <div class="camera-actions">
+              <button class="button secondary" id="add-camera" type="button" ${this.state.cameras.length >= 4 ? 'disabled' : ''}>Add camera</button>
+            </div>
+            ${this.cameraMessage ? `<div class="callout progress camera-message" role="status"><strong>Camera configuration updated</strong><p>${escapeHtml(this.cameraMessage)}</p></div>` : ''}
+          </div>
+          ${this.renderDiscoveredCameras()}
         </div>
       </section>`;
+  }
+
+  private renderDiscoveredCameras(): string {
+    const session = this.deviceSession.snapshot();
+    const connected = Boolean(session.connected && session.verifiedDevice?.serialMatches);
+    const discoveredForConnection = connected && this.cameraDiscoveryHost === session.host;
+    return `
+      <aside class="discovered-cameras-pane" aria-labelledby="discovered-cameras-title">
+        <div class="camera-pane-heading">
+          <div><h3 id="discovered-cameras-title">Discovered cameras</h3>${connected ? `<small>${escapeHtml(session.verifiedDevice?.productPlatform ?? 'Verified RoomOS device')}</small>` : ''}</div>
+          ${connected ? `<button class="button secondary compact-button" id="refresh-cameras" type="button" ${this.cameraDiscoveryLoading ? 'disabled' : ''}>${this.cameraDiscoveryLoading ? 'Discovering…' : 'Refresh cameras'}</button>` : ''}
+        </div>
+        ${!connected ? `
+          <div class="camera-discovery-empty">
+            <p>Connect to the exact RoomOS device to read its configured camera inputs. Discovery does not fetch the macro or change device configuration.</p>
+            <button class="button primary" id="discover-cameras" type="button">Discover Cameras</button>
+          </div>` : ''}
+        ${connected && this.cameraDiscoveryLoading ? '<div class="callout progress" role="status"><strong>Discovering cameras</strong><p>Reading video input configuration and camera status.</p></div>' : ''}
+        ${connected && this.cameraDiscoveryError ? `<div class="callout error" role="alert"><strong>Camera discovery failed</strong><p>${escapeHtml(this.cameraDiscoveryError)}</p></div>` : ''}
+        ${connected && discoveredForConnection && !this.cameraDiscoveryLoading && !this.cameraDiscoveryError && this.discoveredCameras.length === 0 ? '<div class="camera-discovery-empty"><p>No camera-type video input connectors were reported by this device.</p></div>' : ''}
+        ${connected && this.discoveredCameras.length ? `<div class="discovered-camera-list" aria-live="polite">${this.discoveredCameras.map((source, index) => {
+          const configured = this.state.cameras.find((camera) => camera.ConnectorId.trim() === source.ConnectorId);
+          const name = source.Name.trim() || configured?.Name.trim() || `Camera ${source.ConnectorId}`;
+          const upToDate = Boolean(
+            configured &&
+            configured.Name.trim() === name &&
+            configured.ControlId === source.ControlId,
+          );
+          const atLimit = !configured && this.state.cameras.length >= 4;
+          const action = upToDate ? 'Added' : configured ? 'Update Camera' : 'Add Camera';
+          const connectionStatus = source.connection === 'connected'
+            ? 'Connected'
+            : source.connection === 'disconnected'
+              ? 'Disconnected'
+              : 'Status unavailable';
+          const warnings = [
+            source.connection === 'disconnected' ? 'Camera is disconnected' : '',
+            source.connection === 'unavailable' ? 'Camera status unavailable' : '',
+            source.cameraControlMode?.toLowerCase() === 'off' ? 'Device camera control is disabled' : '',
+          ].filter(Boolean);
+          const details = [
+            connectionStatus,
+            `ConnectorId: ${source.ConnectorId}`,
+            `ControlId: ${source.ControlId === null ? 'Disabled' : source.ControlId}`,
+            `Model: ${source.model ?? 'Model unavailable'}`,
+            warnings.length ? `Warnings: ${warnings.join('; ')}` : '',
+          ].filter(Boolean).join(' · ');
+          const tooltipId = `discovered-camera-help-${index + 1}`;
+          return `
+            <article class="discovered-camera-card discovered-camera-card-${source.connection}">
+              <strong class="discovered-camera-name" title="${escapeHtml(name)}">${escapeHtml(name)}</strong>
+              <button class="button ${configured ? 'secondary' : 'primary'}" type="button" data-use-discovered-camera="${escapeHtml(source.ConnectorId)}" ${upToDate || atLimit || this.cameraDiscoveryLoading ? 'disabled' : ''}>${atLimit ? 'Four-camera limit reached' : action}</button>
+              <span class="field-info discovered-camera-info">
+                <button class="field-info-trigger" type="button" aria-label="Information about ${escapeHtml(name)}" aria-describedby="${tooltipId}">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="9"></circle><path d="M12 10.75v6M12 7.25h.01"></path></svg>
+                </button>
+                <span class="field-tooltip discovered-camera-tooltip" id="${tooltipId}" role="tooltip">${escapeHtml(details)}</span>
+              </span>
+            </article>`;
+        }).join('')}</div>` : ''}
+      </aside>`;
   }
 
   private renderConfigurationLabel(key: ConfigurationDefinitionKey, instance = ''): string {
     const definition = CONFIGURATION_DEFINITIONS[key];
     const instanceSuffix = instance ? `-${instance.replace(/[^a-zA-Z0-9_-]/g, '-')}` : '';
     const tooltipId = `configuration-help-${key}${instanceSuffix}`;
-    const optional = 'optional' in definition && definition.optional
-      ? '<span class="field-optional">(optional)</span>'
-      : '';
 
-    return `<span class="field-label"><span>${escapeHtml(definition.label)}</span>${optional}<span class="field-info">
+    return `<span class="field-label"><span>${escapeHtml(definition.label)}</span><span class="field-info">
       <button class="field-info-trigger" type="button" aria-label="Information about ${escapeHtml(definition.label)}" aria-describedby="${tooltipId}">
         <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="9"></circle><path d="M12 10.75v6M12 7.25h.01"></path></svg>
       </button>
-      <span class="field-tooltip" id="${tooltipId}" role="tooltip">${escapeHtml(definition.description)}</span>
+      <span class="field-tooltip" id="${tooltipId}" role="tooltip"><strong class="field-tooltip-path">${escapeHtml(definition.path)}</strong><span>${escapeHtml(definition.description)}</span></span>
     </span></span>`;
   }
 
@@ -673,8 +1015,14 @@ export class ConfiguratorApp {
   }
 
   private renderAboutModal(): string {
-    const macroVersion = this.sources?.manifest.version ?? 'Loading…';
-    const macroFileName = this.sources?.manifest.macro.fileName ?? 'Loading…';
+    const macroVersion = this.catalog?.latest ?? 'Unavailable';
+    const macroFileName = this.sources?.release.macro.fileName ?? 'Not selected';
+    const selectedSource = this.sources?.kind === 'local-development'
+      ? 'Local Development'
+      : this.releaseResolution?.targetTag ?? 'Not selected';
+    const dependencyRelease = this.sources?.release.dependencies
+      .map((dependency) => `${dependency.fileName} ${dependency.release}`)
+      .join(', ') ?? 'Not selected';
     return `
       <dialog class="about-dialog no-print" id="about-dialog" aria-labelledby="about-title" aria-describedby="about-summary">
         <div class="about-shell">
@@ -691,8 +1039,10 @@ export class ConfiguratorApp {
             <section aria-labelledby="about-details-title">
               <h3 id="about-details-title">Project details</h3>
               <dl class="about-details">
-                <div><dt>Macro version</dt><dd><code>${escapeHtml(macroVersion)}</code></dd></div>
+                <div><dt>Macro version</dt><dd><code>${escapeHtml(macroVersion)}</code><small>Latest published Release</small></dd></div>
                 <div><dt>Macro file</dt><dd><code>${escapeHtml(macroFileName)}</code></dd></div>
+                <div><dt>Selected source</dt><dd><code>${escapeHtml(selectedSource)}</code></dd></div>
+                <div><dt>Dependency Release</dt><dd><code>${escapeHtml(dependencyRelease)}</code></dd></div>
                 <div><dt>Camera sources</dt><dd>One to four configured sources</dd></div>
                 <div><dt>Production layout</dt><dd>Main with optional Preview</dd></div>
                 <div><dt>Included tools</dt><dd>Configurator, direct installer, and PDF operator guide</dd></div>
@@ -721,58 +1071,9 @@ export class ConfiguratorApp {
       </section>`;
   }
 
-  private renderInstaller(): string {
-    const session = this.deviceSession.snapshot();
-    const verifiedDevice = session.verifiedDevice;
-    const installResult = session.installationResult;
-    const isUpdate = this.installationMode === 'update';
-    const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
-    const operation = isUpdate ? 'update' : 'installation';
-    const configurationIsValid = validateConfiguratorState(this.state).length === 0;
-    const canPromptInstall = Boolean(
-      session.connected &&
-      verifiedDevice?.serialMatches &&
-      this.sources &&
-      configurationIsValid &&
-      !this.busy,
-    );
-    return `
-      <section class="panel section no-print installer-section" id="install">
-        <div class="section-heading">
-          <div><span class="section-kicker">Direct installation</span><h2>${isUpdate ? 'Update macro on RoomOS' : 'Install macro on RoomOS'}</h2></div>
-          <p>${session.connected ? `The verified device is ready for a reviewed ${operation}.` : `Connect in a secure modal without leaving this page. The ${operation} begins immediately after verification.`}</p>
-        </div>
-        <div class="install-layout">
-          <div class="install-plan-panel">
-            <h3>Installation plan</h3>
-            <ol class="install-plan">
-              <li><span>1</span><div><strong>${isUpdate ? 'Update' : 'Install'} dependency</strong><code>Thrustmaster_16000M-Class</code><small>Saved inactive from its separate GitHub repository.</small></div></li>
-              <li><span>2</span><div><strong>${isUpdate ? 'Update' : 'Install'} configured macro</strong><code>Joystick_CameraControl_ProductionSwitcher</code><small>Saved and activated with the mapping shown above.</small></div></li>
-              <li><span>3</span><div><strong>Restart macro runtime</strong><small>Every active macro on the device restarts. The macro then installs its UI panel.</small></div></li>
-            </ol>
-          </div>
-          <div class="install-review">
-            <h3>Device status</h3>
-            ${verifiedDevice ? `
-              <div class="device-result ${verifiedDevice.serialMatches && verifiedDevice.activeCalls === 0 ? 'success' : 'error'}">
-                <strong>${verifiedDevice.serialMatches ? 'Serial confirmed' : 'Serial mismatch — installation blocked'}</strong>
-                <span>${escapeHtml(verifiedDevice.productPlatform)} · RoomOS ${escapeHtml(verifiedDevice.roomOsVersion)}</span>
-                <span>${verifiedDevice.activeCalls === 0 ? 'No active calls' : `${verifiedDevice.activeCalls} active call(s) — installation blocked`}</span>
-              </div>` : '<div class="device-result neutral"><strong>Not connected</strong><span>Connect and verify the exact device in the secure modal.</span></div>'}
-            <div class="install-buttons">
-              ${session.connected ? '<button class="button secondary" id="disconnect-device" type="button">Disconnect</button>' : ''}
-              <button class="button primary install-button" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${session.connected ? (canPromptInstall ? '' : 'disabled') : (configurationIsValid ? '' : 'disabled')}>${actionLabel}</button>
-            </div>
-          </div>
-        </div>
-        ${this.statusMessage ? `<div class="callout progress"><strong>Installation progress</strong><p>${escapeHtml(this.statusMessage)}</p></div>` : ''}
-        ${this.errorMessage ? `<div class="callout error"><strong>Unable to continue</strong><p>${escapeHtml(this.errorMessage)}</p></div>` : ''}
-        ${installResult ? `<div class="callout ${installResult.kind === 'ready' ? 'success' : installResult.kind === 'failed' ? 'error' : 'warning'}"><strong>${installResult.kind === 'ready' ? 'Installation ready' : installResult.kind === 'failed' ? 'Initialization failed' : 'Initialization not confirmed'}</strong><p>${escapeHtml(installResult.message)}</p></div>` : ''}
-      </section>`;
-  }
-
   private renderDeviceConnectionModal(): string {
     const isFetch = this.pendingDeviceAction === 'fetch-macro';
+    const isDiscovery = this.pendingDeviceAction === 'discover-cameras';
     const isUpdate = this.installationMode === 'update';
     const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
     const operation = isUpdate ? 'update' : 'install';
@@ -780,11 +1081,11 @@ export class ConfiguratorApp {
       <dialog class="device-connection-dialog no-print" id="device-connection-dialog" aria-labelledby="device-connection-title">
         <div class="confirm-dialog-shell device-connection-shell">
           <header>
-            <div><span class="section-kicker">Secure RoomOS connection</span><h2 id="device-connection-title">${isFetch ? 'Fetch Macro from Device' : `Connect to ${actionLabel}`}</h2></div>
+            <div><span class="section-kicker">Secure RoomOS connection</span><h2 id="device-connection-title">${isDiscovery ? 'Discover Cameras' : isFetch ? 'Fetch Macro from Device' : `Connect to ${actionLabel}`}</h2></div>
             <button class="icon-button" type="button" data-close-device-connection aria-label="Close device connection dialog" ${this.busy ? 'disabled' : ''}>×</button>
           </header>
           <div class="confirm-dialog-content device-connection-content">
-            <p>${isFetch ? 'Verify the exact device, then read its installed solution macro without changing or restarting RoomOS.' : `Verify the exact device, then immediately ${operation} the configured solution. This restarts every active macro on the device.`}</p>
+            <p>${isDiscovery ? 'Verify the exact device, then read its camera input configuration and status without fetching the macro or changing RoomOS.' : isFetch ? 'Verify the exact device, then read its installed solution macro without changing or restarting RoomOS.' : `Verify the exact device, review its product, RoomOS version, and call status, then confirm before the installer ${operation}s the configured solution.`}</p>
             <div class="device-form">
               <label class="field wide"><span>Device address</span><input id="device-host" placeholder="room-device.example.com" value="${escapeHtml(this.credentials.host)}" ${this.busy ? 'disabled' : ''}></label>
               <label class="field"><span>Administrator username</span><input id="device-username" autocomplete="username" value="${escapeHtml(this.credentials.username)}" ${this.busy ? 'disabled' : ''}></label>
@@ -798,7 +1099,7 @@ export class ConfiguratorApp {
           <footer>
             <button class="button secondary" id="trust-certificate" type="button" ${this.busy ? 'disabled' : ''}>Open certificate page</button>
             <button class="button secondary" type="button" data-close-device-connection ${this.busy ? 'disabled' : ''}>Cancel</button>
-            <button class="button primary" id="connect-device" type="button" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Connecting…' : isFetch ? 'Connect, verify, and fetch' : `Connect, verify, and ${operation}`}</button>
+            <button class="button primary" id="connect-device" type="button" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Connecting…' : isDiscovery ? 'Connect, verify, and discover' : isFetch ? 'Connect, verify, and fetch' : 'Connect and verify'}</button>
           </footer>
         </div>
       </dialog>`;
@@ -806,6 +1107,7 @@ export class ConfiguratorApp {
 
   private renderInstallConfirmationModal(): string {
     const session = this.deviceSession.snapshot();
+    const verifiedDevice = session.verifiedDevice;
     const activeCalls = session.verifiedDevice?.activeCalls ?? 0;
     const isUpdate = this.installationMode === 'update';
     const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
@@ -817,6 +1119,12 @@ export class ConfiguratorApp {
             <button class="icon-button" type="button" data-close-install-confirmation aria-label="Close confirmation dialog">×</button>
           </header>
           <div class="confirm-dialog-content">
+            ${verifiedDevice ? `
+              <div class="review-device-status ${verifiedDevice.serialMatches && activeCalls === 0 ? 'success' : 'error'}" role="status" aria-live="polite">
+                <strong>${verifiedDevice.serialMatches ? 'Serial confirmed' : 'Serial mismatch — installation blocked'}</strong>
+                <span>${escapeHtml(verifiedDevice.productPlatform)} · ${escapeHtml(displayRoomOsVersion(verifiedDevice.roomOsVersion))}</span>
+              </div>
+            ` : ''}
             <p>The installer will save both macros, activate the configured solution, and restart the RoomOS macro runtime. Every active macro on this device will restart.</p>
             ${activeCalls > 0 ? `
               <div class="callout warning"><strong>Device is currently on a call</strong><p>${activeCalls} active call(s) detected. The ${actionLabel.toLowerCase()} is blocked until the call has ended. Close this prompt and try again afterward.</p></div>
@@ -885,10 +1193,26 @@ export class ConfiguratorApp {
       </dialog>`;
   }
 
+  private renderDeviceConnectionPill(): string {
+    const session = this.deviceSession.snapshot();
+    const verifiedDevice = session.verifiedDevice;
+    if (!session.connected || !verifiedDevice?.serialMatches) return '';
+
+    const broadcastName = verifiedDevice.broadcastName.trim();
+    const roomOsVersion = displayRoomOsVersion(verifiedDevice.roomOsVersion);
+    return `
+      <span class="device-connection-pill" title="${escapeHtml(broadcastName || 'Device broadcast name not set')}">
+        <span class="device-connection-pill-state"><span class="device-connection-pill-dot" aria-hidden="true"></span>Connected</span>
+        ${broadcastName ? `<span aria-hidden="true">·</span><span class="device-connection-pill-name">${escapeHtml(broadcastName)}</span>` : ''}
+        <span aria-hidden="true">·</span><span class="device-connection-pill-version">${escapeHtml(roomOsVersion)}</span>
+      </span>`;
+  }
+
   private render(): void {
     const currentYear = new Date().getFullYear();
+    const deviceConnectionPill = this.renderDeviceConnectionPill();
     this.root.innerHTML = `
-      <div class="site-shell">
+      <div class="site-shell${deviceConnectionPill ? ' device-connected' : ''}">
         <nav class="topbar no-print">
           <button type="button" class="wordmark" data-workflow-step="1">
             <span class="wordmark-mark" aria-hidden="true"><img src="/icons/joystick-camera-control.svg" alt=""></span>
@@ -912,8 +1236,9 @@ export class ConfiguratorApp {
             ${this.renderWorkflowActions()}
           </div>
         </main>
-        <footer class="site-footer no-print">
+        <footer class="site-footer no-print${deviceConnectionPill ? ' device-connected' : ''}">
           <p>&copy; ${currentYear} Cisco Systems, Inc. <span aria-hidden="true">||</span> Created by the Collaboration TME team</p>
+          ${deviceConnectionPill}
           <a href="${CISCO_SAMPLE_CODE_LICENSE_URL}" target="_blank" rel="noreferrer" aria-label="Cisco Sample Code License (opens in a new tab)">Cisco Sample Code License</a>
         </footer>
         ${this.renderAboutModal()}
@@ -936,6 +1261,21 @@ export class ConfiguratorApp {
       const dialog = this.byId('installation-progress-dialog') as HTMLDialogElement | null;
       if (dialog && !dialog.open) dialog.showModal();
     }
+    const session = this.deviceSession.snapshot();
+    if (
+      this.workflow.currentStep === 2 &&
+      session.connected &&
+      session.verifiedDevice?.serialMatches &&
+      this.cameraDiscoveryHost !== session.host &&
+      !this.cameraDiscoveryLoading &&
+      !this.cameraDiscoveryScheduled
+    ) {
+      this.cameraDiscoveryScheduled = true;
+      window.setTimeout(() => {
+        this.cameraDiscoveryScheduled = false;
+        void this.discoverCameras(false);
+      }, 0);
+    }
   }
 
   private bindEvents(): void {
@@ -945,6 +1285,13 @@ export class ConfiguratorApp {
 
     this.byId('theme-preference')?.addEventListener('change', (event) => {
       this.setThemePreference((event.currentTarget as HTMLSelectElement).value as ThemePreference);
+    });
+    this.byId('base-macro-release')?.addEventListener('change', (event) => {
+      const tag = (event.currentTarget as HTMLSelectElement).value;
+      if (tag) void this.selectReleaseTarget(tag);
+    });
+    this.byId('migrate-latest-release')?.addEventListener('click', () => {
+      void this.migrateToLatest();
     });
 
     this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => {
@@ -970,11 +1317,22 @@ export class ConfiguratorApp {
       });
     });
 
-    this.root.querySelectorAll<HTMLInputElement>('[data-camera-id]').forEach((input) => {
+    this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-camera-id]').forEach((input) => {
+      const field = input.dataset.cameraField as 'Name' | 'ConnectorId' | 'ControlId';
+      if (field === 'Name' || field === 'ConnectorId') {
+        input.addEventListener('input', () => {
+          const camera = this.cameraById(input.dataset.cameraId);
+          if (camera && field === 'Name') camera.Name = input.value;
+          if (camera && field === 'ConnectorId') camera.ConnectorId = input.value;
+          this.cameraMessage = '';
+          this.syncCameraMetadata();
+        });
+        return;
+      }
       input.addEventListener('change', () => {
         const camera = this.cameraById(input.dataset.cameraId);
-        const field = input.dataset.cameraField as 'Name' | 'ConnectorId' | 'ControlId';
-        if (camera && field) camera[field] = input.value;
+        if (camera && field === 'ControlId') camera.ControlId = input.value || null;
+        this.cameraMessage = '';
         this.render();
       });
     });
@@ -1044,8 +1402,13 @@ export class ConfiguratorApp {
     });
 
     this.byId('add-camera')?.addEventListener('click', () => this.addCamera());
+    this.byId('discover-cameras')?.addEventListener('click', () => void this.beginCameraDiscovery());
+    this.byId('refresh-cameras')?.addEventListener('click', () => void this.discoverCameras(true));
+    this.root.querySelectorAll<HTMLButtonElement>('[data-use-discovered-camera]').forEach((button) => {
+      button.addEventListener('click', () => this.addOrUpdateDiscoveredCamera(button.dataset.useDiscoveredCamera));
+    });
     this.byId('restore-default-controls')?.addEventListener('click', () => this.restoreDefaultControls());
-    this.byId('fresh-installation')?.addEventListener('click', () => this.startFreshInstallation());
+    this.byId('fresh-installation')?.addEventListener('click', () => void this.startFreshInstallation());
     this.byId('import-macro-file')?.addEventListener('change', (event) => {
       void this.importMacroFile(event.currentTarget as HTMLInputElement);
     });
@@ -1120,17 +1483,120 @@ export class ConfiguratorApp {
     }
   }
 
-  private loadConfigurationSource(source: string, message: string): void {
-    this.state = parseConfiguratorStateFromMacro(source);
+  private syncCameraMetadata(): void {
+    const cameraActions = cameraButtonActions(this.state.cameras);
+    this.root.querySelectorAll<HTMLElement>('.camera-card').forEach((card) => {
+      const nameInput = card.querySelector<HTMLInputElement>('input[data-camera-field="Name"]');
+      const camera = this.cameraById(nameInput?.dataset.cameraId);
+      if (!camera) return;
+      const name = camera.Name || 'Unnamed camera';
+      const heading = card.querySelector<HTMLElement>('.camera-card-header strong');
+      const action = card.querySelector<HTMLElement>('.camera-card-header code');
+      const remove = card.querySelector<HTMLButtonElement>('[data-remove-camera]');
+      if (heading) heading.textContent = camera.Name || `Camera ${this.state.cameras.indexOf(camera) + 1}`;
+      if (action) action.textContent = cameraActions.get(camera.id) ?? '';
+      if (remove) remove.setAttribute('aria-label', `Remove ${name}`);
+    });
+    const defaultCamera = this.byId('default-camera') as HTMLSelectElement | null;
+    for (const option of defaultCamera?.options ?? []) {
+      const camera = this.cameraById(option.value);
+      if (camera) option.textContent = camera.Name || 'Unnamed camera';
+    }
+    const next = this.root.querySelector<HTMLButtonElement>('.workflow-actions [data-workflow-step="3"]');
+    if (next) next.disabled = validateConfiguratorState(this.state).length > 0;
+    this.root.querySelector('.camera-message')?.remove();
+    const printSheet = this.root.querySelector<HTMLElement>('.print-sheet');
+    if (printSheet) printSheet.outerHTML = renderConfiguredPrintSheet(this.state);
+  }
+
+  private async selectReleaseTarget(tag: string): Promise<void> {
+    if (!this.catalog || !this.releaseResolution || this.busy) return;
+    const previousSources = this.sources;
+    const previousResolution = this.releaseResolution;
+    this.busy = true;
+    this.sourceError = '';
+    this.render();
+    try {
+      const localDevelopment = tag === LOCAL_DEVELOPMENT_TARGET;
+      const sources = localDevelopment
+        ? await this.loadLocalSources()
+        : await this.loadReleaseSources(tag);
+      this.sources = sources;
+      this.releaseResolution = localDevelopment
+        ? { ...previousResolution, targetTag: sources.release.tag, targetChosenExplicitly: true }
+        : chooseReleaseTarget(previousResolution, this.catalog, sources.release.tag);
+      this.configurationError = '';
+      const targetLabel = localDevelopment
+        ? `Local Development (Macro Version ${sources.release.tag})`
+        : sources.release.tag;
+      this.configurationMessage = previousResolution.origin === 'fresh'
+        ? `Fresh installations now target ${targetLabel}. Your configuration settings were preserved.`
+        : `Migrated the recovered configuration to ${targetLabel}. No device changes were made.`;
+    } catch (error) {
+      this.sources = previousSources;
+      this.releaseResolution = previousResolution;
+      this.sourceError = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  private async migrateToLatest(): Promise<void> {
+    if (!this.catalog || !this.releaseResolution || this.busy) return;
+    const latestResolution = migrateToLatestRelease(this.releaseResolution, this.catalog);
+    await this.selectReleaseTarget(latestResolution.targetTag!);
+  }
+
+  private async loadConfigurationSource(
+    source: string,
+    message: string,
+    origin: Exclude<MacroSourceOrigin, 'fresh'>,
+  ): Promise<void> {
+    if (!this.catalog) throw new Error('The installer Release catalog is not available.');
+    const ingested = ingestMacroSource(source, this.catalog, origin);
+    this.state = ingested.state;
+    this.releaseResolution = ingested.release;
+    this.sources = undefined;
+    this.sourceError = '';
+    if (ingested.release.targetTag) {
+      try {
+        this.sources = await this.loadReleaseSources(ingested.release.targetTag);
+      } catch (error) {
+        this.sourceError = error instanceof Error ? error.message : String(error);
+      }
+    }
     this.configurationError = '';
     this.configurationMessage = message;
   }
 
-  private startFreshInstallation(): void {
+  private async startFreshInstallation(): Promise<void> {
+    if (!this.catalog || this.busy) return;
+    const selectedTag = this.releaseResolution?.targetTag ?? latestCatalogRelease(this.catalog).tag;
+    this.busy = true;
+    this.sourceError = '';
+    try {
+      const sources = this.sources?.kind === 'local-development'
+        ? await this.loadLocalSources()
+        : await this.loadReleaseSources(selectedTag);
+      this.sources = sources;
+      this.releaseResolution = {
+        origin: 'fresh',
+        recognition: 'fresh',
+        targetTag: sources.release.tag,
+        targetChosenExplicitly: sources.kind === 'local-development' || sources.release.tag !== this.catalog.latest,
+      };
+    } catch (error) {
+      this.sourceError = error instanceof Error ? error.message : String(error);
+      this.busy = false;
+      this.render();
+      return;
+    }
     this.state = createDefaultState();
     this.installationMode = 'install';
     this.configurationMessage = '';
     this.configurationError = '';
+    this.busy = false;
     this.navigateToStep(2);
   }
 
@@ -1139,52 +1605,55 @@ export class ConfiguratorApp {
     if (!file) return;
     this.configurationMessage = '';
     this.configurationError = '';
-    let loaded = false;
     try {
       if (file.size > 1024 * 1024) throw new Error('Choose a macro smaller than 1 MiB.');
-      this.loadConfigurationSource(await file.text(), `Loaded ${file.name}. Review the recovered settings before downloading or installing.`);
+      await this.loadConfigurationSource(
+        await file.text(),
+        `Loaded ${file.name}. Review the recovered settings before downloading or installing.`,
+        'upload',
+      );
       this.installationMode = 'install';
-      loaded = true;
     } catch (error) {
       this.configurationError = error instanceof Error ? error.message : String(error);
     }
-    if (loaded) this.navigateToStep(2);
-    else this.render();
+    this.render();
   }
 
   private async beginDeviceMacroFetch(): Promise<void> {
     const session = this.deviceSession.snapshot();
     if (session.connected && session.verifiedDevice?.serialMatches) {
-      await this.fetchInstalledMacro(true);
+      await this.fetchInstalledMacro();
       return;
     }
     this.openDeviceConnection(true);
   }
 
-  private async fetchInstalledMacro(navigateAfterLoad = false): Promise<void> {
+  private async fetchInstalledMacro(): Promise<void> {
     const session = this.deviceSession.snapshot();
-    if (!session.connected || !session.verifiedDevice?.serialMatches || !this.sources) return;
+    if (!session.connected || !session.verifiedDevice?.serialMatches || !this.catalog) return;
+    const macroName = latestCatalogRelease(this.catalog).macro.macroName;
     this.configurationMessage = '';
     this.configurationError = '';
     this.busy = true;
-    this.statusMessage = `Reading ${this.sources.manifest.macro.macroName} from the verified device.`;
+    this.statusMessage = `Reading ${macroName} from the verified device.`;
     this.render();
-    let loaded = false;
     try {
-      const source = await this.deviceSession.fetchInstalledMacro(this.sources.manifest.macro.macroName);
-      this.loadConfigurationSource(source, `Fetched ${this.sources.manifest.macro.macroName} from the verified device. Review the recovered settings before installing changes.`);
+      const source = await this.deviceSession.fetchInstalledMacro(macroName);
+      await this.loadConfigurationSource(
+        source,
+        `Fetched ${macroName} from the verified device. Review the recovered settings before installing changes.`,
+        'device',
+      );
       this.installationMode = 'update';
       this.statusMessage = 'The installed macro configuration was loaded without changing the device.';
       this.pendingDeviceAction = undefined;
-      loaded = true;
     } catch (error) {
       this.configurationError = error instanceof Error ? error.message : String(error);
       this.statusMessage = 'The device was not changed.';
       this.pendingDeviceAction = undefined;
     } finally {
       this.busy = false;
-      if (loaded && navigateAfterLoad) this.navigateToStep(2);
-      else this.render();
+      this.render();
     }
   }
 
@@ -1192,24 +1661,99 @@ export class ConfiguratorApp {
     if (this.state.cameras.length >= 4) return;
     const id = `camera-${Date.now()}`;
     const number = this.state.cameras.length + 1;
+    let connectorNumber = 1;
+    const connectorIds = new Set(this.state.cameras.map((camera) => camera.ConnectorId.trim()));
+    while (connectorIds.has(String(connectorNumber))) connectorNumber += 1;
     this.state.cameras.push({
       id,
       Name: `Camera ${number}`,
-      ConnectorId: String(number),
-      ControlId: String(number),
+      ConnectorId: String(connectorNumber),
+      ControlId: String(connectorNumber),
     });
-    const preferredButtons = [DEFAULT_CAMERA_BUTTONS[number - 1], 13, 14, 8, 2, 11, 12, 15, 16, 5, 6, 7, 9, 10, 3, 4, 1]
-      .filter((button): button is number => button !== undefined);
-    const available = preferredButtons.find((button) => this.state.assignments[button] === UNUSED_ASSIGNMENT);
-    if (available) this.state.assignments[available] = cameraAssignment(id);
+    const assigned = this.assignAvailableButton(id, number);
+    this.cameraMessage = assigned
+      ? `Camera ${number} was added and assigned to an available joystick button.`
+      : `Camera ${number} was added. Assign this camera to one button in Configure Controls.`;
     this.render();
   }
 
+  private assignAvailableButton(cameraId: string, number: number): boolean {
+    const preferredButtons = [DEFAULT_CAMERA_BUTTONS[number - 1], 13, 14, 8, 2, 11, 12, 15, 16, 5, 6, 7, 9, 10, 3, 4, 1]
+      .filter((button): button is number => button !== undefined);
+    const available = preferredButtons.find((button) => this.state.assignments[button] === UNUSED_ASSIGNMENT);
+    if (available) this.state.assignments[available] = cameraAssignment(cameraId);
+    return available !== undefined;
+  }
+
+  private addOrUpdateDiscoveredCamera(connectorId: string | undefined): void {
+    if (!connectorId) return;
+    const discovered = this.discoveredCameras.find((source) => source.ConnectorId === connectorId);
+    if (!discovered) return;
+    const configured = this.state.cameras.find((camera) => camera.ConnectorId.trim() === connectorId);
+    const name = discovered.Name.trim() || configured?.Name.trim() || `Camera ${connectorId}`;
+    if (configured) {
+      configured.Name = name;
+      configured.ControlId = discovered.ControlId;
+      this.cameraMessage = `${name} was updated from discovered ConnectorId ${connectorId}. Its default and button assignments were preserved.`;
+      this.render();
+      return;
+    }
+    if (this.state.cameras.length >= 4) return;
+    const id = `camera-${Date.now()}-${connectorId}`;
+    this.state.cameras.push({
+      id,
+      Name: name,
+      ConnectorId: connectorId,
+      ControlId: discovered.ControlId,
+    });
+    const assigned = this.assignAvailableButton(id, this.state.cameras.length);
+    this.cameraMessage = assigned
+      ? `${name} was added and assigned to an available joystick button.`
+      : `${name} was added. Assign this camera to one button in Configure Controls.`;
+    this.render();
+  }
+
+  private async beginCameraDiscovery(): Promise<void> {
+    const session = this.deviceSession.snapshot();
+    if (!session.connected || !session.verifiedDevice?.serialMatches) {
+      this.openDeviceConnection(false, true);
+      return;
+    }
+    await this.discoverCameras(true);
+  }
+
+  private async discoverCameras(force: boolean): Promise<void> {
+    const session = this.deviceSession.snapshot();
+    if (!session.connected || !session.verifiedDevice?.serialMatches || this.cameraDiscoveryLoading) return;
+    if (!force && this.cameraDiscoveryHost === session.host) return;
+    this.cameraDiscoveryHost = session.host;
+    this.cameraDiscoveryLoading = true;
+    this.cameraDiscoveryError = '';
+    this.discoveredCameras = [];
+    this.render();
+    try {
+      this.discoveredCameras = await this.deviceSession.discoverCameraSources();
+    } catch (error) {
+      this.cameraDiscoveryError = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.cameraDiscoveryLoading = false;
+      this.render();
+    }
+  }
+
+  private clearCameraDiscovery(): void {
+    this.discoveredCameras = [];
+    this.cameraDiscoveryHost = undefined;
+    this.cameraDiscoveryLoading = false;
+    this.cameraDiscoveryScheduled = false;
+    this.cameraDiscoveryError = '';
+  }
+
   private downloadConfiguredMacro(): void {
-    if (!this.sources) return;
+    if (!this.sources || !this.hasSupportedTarget()) return;
     try {
       const configured = generateConfiguredMacro(this.sources.macroTemplate, this.state);
-      downloadText(this.sources.manifest.macro.fileName, configured);
+      downloadText(this.sources.release.macro.fileName, configured);
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : String(error);
       this.render();
@@ -1226,11 +1770,12 @@ export class ConfiguratorApp {
     }
   }
 
-  private openDeviceConnection(fetchMacro: boolean): void {
+  private openDeviceConnection(fetchMacro: boolean, discoverCameras = false): void {
     this.workflow.markProgress();
-    this.pendingDeviceAction = fetchMacro ? 'fetch-macro' : 'install';
+    this.pendingDeviceAction = discoverCameras ? 'discover-cameras' : fetchMacro ? 'fetch-macro' : 'install';
     this.deviceConnectionOpen = true;
     this.errorMessage = '';
+    this.deviceConnectionError = '';
     this.statusMessage = '';
     this.render();
   }
@@ -1283,11 +1828,13 @@ export class ConfiguratorApp {
   private async connectDevice(): Promise<void> {
     this.captureDeviceFields();
     this.errorMessage = '';
+    this.deviceConnectionError = '';
     let actionAfterConnect: PendingDeviceAction | undefined;
     try {
       this.busy = true;
       this.statusMessage = 'Connecting to the RoomOS device.';
       this.render();
+      this.clearCameraDiscovery();
       const session = await this.deviceSession.connect(this.credentials, this.expectedSerial);
       this.credentials.host = session.host ?? this.credentials.host;
       this.persistDeviceIdentity();
@@ -1295,7 +1842,9 @@ export class ConfiguratorApp {
       this.pendingDeviceAction = undefined;
       this.statusMessage = actionAfterConnect === 'fetch-macro'
         ? 'Connected and verified. Reading the installed macro.'
-        : 'Connected and verified. Starting installation.';
+        : actionAfterConnect === 'discover-cameras'
+          ? 'Connected and verified. Discovering cameras.'
+          : 'Connected and verified. Review the device details before confirming installation.';
       this.deviceConnectionOpen = false;
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : String(error);
@@ -1304,13 +1853,16 @@ export class ConfiguratorApp {
       this.busy = false;
       this.render();
     }
-    if (actionAfterConnect === 'fetch-macro') await this.fetchInstalledMacro(true);
-    if (actionAfterConnect === 'install') await this.installDevice();
+    if (actionAfterConnect === 'fetch-macro') await this.fetchInstalledMacro();
+    if (actionAfterConnect === 'discover-cameras') await this.discoverCameras(true);
+    if (actionAfterConnect === 'install') await this.openInstallConfirmation();
   }
 
   private disconnectDevice(): void {
     this.deviceSession.disconnect();
+    this.clearCameraDiscovery();
     this.credentials.password = '';
+    this.deviceConnectionError = '';
     this.statusMessage = 'Disconnected. Credentials were cleared from the active connection.';
     this.pendingDeviceAction = undefined;
     this.deviceConnectionOpen = false;
@@ -1319,7 +1871,7 @@ export class ConfiguratorApp {
 
   private async openInstallConfirmation(): Promise<void> {
     const session = this.deviceSession.snapshot();
-    if (!session.connected || !this.sources || !session.verifiedDevice?.serialMatches || this.busy) return;
+    if (!session.connected || !this.sources || !this.hasSupportedTarget() || !session.verifiedDevice?.serialMatches || this.busy) return;
     this.errorMessage = '';
     this.installConfirmationOpen = false;
     this.busy = true;
@@ -1361,7 +1913,7 @@ export class ConfiguratorApp {
 
   private async installDevice(): Promise<void> {
     const session = this.deviceSession.snapshot();
-    if (!session.connected || !this.sources || !session.verifiedDevice?.serialMatches) return;
+    if (!session.connected || !this.sources || !this.hasSupportedTarget() || !session.verifiedDevice?.serialMatches) return;
     if (session.verifiedDevice.activeCalls !== 0) {
       this.errorMessage = 'Installation is blocked while the device has an active call.';
       this.statusMessage = 'Connected and verified, but no device changes were made.';
@@ -1376,17 +1928,16 @@ export class ConfiguratorApp {
     this.recordInstallationProgress('Rechecking the device immediately before making changes.');
     this.render();
     try {
-      this.recordInstallationProgress('Loading the external Thrustmaster class before making device changes.');
+      this.recordInstallationProgress('Loading the verified packaged dependency before making device changes.');
       this.render();
-      const [dependencySource, macroSource] = await Promise.all([
-        loadDependencySource(this.sources.manifest),
-        Promise.resolve(generateConfiguredMacro(this.sources.macroTemplate, this.state)),
-      ]);
+      const macroSource = generateConfiguredMacro(this.sources.macroTemplate, this.state);
       const result = await this.deviceSession.install(
         {
-          dependencyName: this.sources.manifest.dependency.macroName,
-          dependencySource,
-          macroName: this.sources.manifest.macro.macroName,
+          dependencies: this.sources.dependencies.map((dependency) => ({
+            name: dependency.manifest.macroName,
+            source: dependency.source,
+          })),
+          macroName: this.sources.release.macro.macroName,
           macroSource,
         },
         (message) => {

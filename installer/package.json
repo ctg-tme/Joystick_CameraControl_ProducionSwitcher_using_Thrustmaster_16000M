@@ -7,8 +7,9 @@
   "scripts": {
     "prepare:assets": "node scripts/prepare-assets.mjs",
     "dev": "npm run prepare:assets && vite --host 127.0.0.1 --port 5177",
-    "build": "npm run prepare:assets && tsc --noEmit && vite build",
-    "test": "npm run prepare:assets && vitest run",
+    "build": "node scripts/prepare-assets.mjs --production && tsc --noEmit && vite build",
+    "postbuild": "node scripts/prepare-assets.mjs",
+    "test": "vitest run",
     "fixtures:operator-guide": "node scripts/generate-operator-guide-fixtures.mjs"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@types/node": "^26.1.1",
     "@types/qrcode": "^1.5.6",
+    "happy-dom": "^20.11.6",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"

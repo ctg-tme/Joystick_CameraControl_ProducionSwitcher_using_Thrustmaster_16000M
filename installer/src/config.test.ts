@@ -129,7 +129,7 @@ describe('joystick configuration generation', () => {
     ]));
   });
 
-  it('limits Preview output and Precision divisor to the WebUI options', () => {
+  it('limits Preview output and Ramp divisor to the WebUI options', () => {
     const state = createDefaultState();
     state.previewOutput = 3;
     state.slowModeDivisor = 4;
@@ -140,7 +140,7 @@ describe('joystick configuration generation', () => {
     state.slowModeDivisor = 5;
     expect(validateConfiguratorState(state)).toEqual(expect.arrayContaining([
       'Preview output must be between 1 and 3.',
-      'Precision divisor must be between 1 and 4.',
+      'Ramp divisor must be between 1 and 4.',
     ]));
   });
 
@@ -278,6 +278,54 @@ describe('joystick configuration generation', () => {
     expect(recovered.cameras[0].Name).toBe('Legacy Camera');
     expect(recovered.assignments[12]).toBe(cameraAssignment('camera-1'));
     expect(recovered.assignments[2]).toBe(builtInAssignment(''));
+  });
+
+  it('round-trips a video-only camera with a null ControlId', () => {
+    const state = createDefaultState();
+    state.cameras[0].ControlId = null;
+    const template = [
+      '/* JOYSTICK_CONFIG_START */',
+      'const config = {};',
+      '/* JOYSTICK_CONFIG_END */',
+    ].join('\n');
+
+    expect(validateConfiguratorState(state)).toEqual([]);
+    const configured = generateConfiguredMacro(template, state);
+    expect(configured).toContain('ControlId: null');
+    expect(parseConfiguratorStateFromMacro(configured).cameras[0].ControlId).toBeNull();
+  });
+
+  it('requires unique ConnectorIds while allowing repeated ControlIds', () => {
+    const state = createDefaultState();
+    state.cameras.push({
+      id: 'camera-2',
+      Name: 'Camera 2',
+      ConnectorId: '2',
+      ControlId: '1',
+    });
+    state.assignments[11] = cameraAssignment('camera-2');
+
+    expect(validateConfiguratorState(state)).toEqual([]);
+
+    state.cameras[1].ConnectorId = '1';
+    expect(validateConfiguratorState(state)).toContain('Video ConnectorId 1 must be unique.');
+  });
+
+  it('preserves unsupported imported ControlIds but blocks generated output until corrected', () => {
+    const template = [
+      '/* JOYSTICK_CONFIG_START */',
+      'const config = {};',
+      '/* JOYSTICK_CONFIG_END */',
+    ].join('\n');
+    const source = generateConfiguredMacro(template, createDefaultState())
+      .replace('ControlId: "1"', 'ControlId: "21"');
+    const recovered = parseConfiguratorStateFromMacro(source);
+
+    expect(recovered.cameras[0].ControlId).toBe('21');
+    expect(validateConfiguratorState(recovered)).toContain(
+      'Camera 1 Camera ControlId must be between 1 and 15 or Disabled.',
+    );
+    expect(() => buildMacroConfig(recovered)).toThrow('must be between 1 and 15 or Disabled');
   });
 
   it('rejects an unsupported panel location in an imported macro', () => {

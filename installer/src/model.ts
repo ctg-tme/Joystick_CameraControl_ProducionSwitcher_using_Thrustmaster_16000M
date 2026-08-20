@@ -29,7 +29,7 @@ export interface CameraDefinition {
   id: string;
   Name: string;
   ConnectorId: string;
-  ControlId: string;
+  ControlId: string | null;
 }
 
 export interface ConfiguratorState {

@@ -24,7 +24,7 @@ export interface GeneratedCamera {
   ButtonAction: string;
   Name: string;
   ConnectorId: string;
-  ControlId: string;
+  ControlId: string | null;
 }
 
 export interface GeneratedMacroConfig {
@@ -85,7 +85,7 @@ export function validateConfiguratorState(state: ConfiguratorState): string[] {
     errors.push('Zoom ramp speed must be between 1 and 15.');
   }
   if (!Number.isInteger(state.slowModeDivisor) || state.slowModeDivisor < 1 || state.slowModeDivisor > 4) {
-    errors.push('Precision divisor must be between 1 and 4.');
+    errors.push('Ramp divisor must be between 1 and 4.');
   }
 
   const cameraActions = cameraButtonActions(state.cameras);
@@ -93,10 +93,23 @@ export function validateConfiguratorState(state: ConfiguratorState): string[] {
     errors.push('Camera ButtonAction values must be unique.');
   }
 
+  const connectorIds = new Set<string>();
   for (const camera of state.cameras) {
     if (!camera.Name.trim()) errors.push('Every camera requires a name.');
-    if (!camera.ConnectorId.trim()) errors.push(`${camera.Name || 'Camera'} requires a video ConnectorId.`);
-    if (!camera.ControlId.trim()) errors.push(`${camera.Name || 'Camera'} requires a camera ControlId.`);
+    const connectorId = camera.ConnectorId.trim();
+    if (!connectorId) {
+      errors.push(`${camera.Name || 'Camera'} requires a video ConnectorId.`);
+    } else if (connectorIds.has(connectorId)) {
+      errors.push(`Video ConnectorId ${connectorId} must be unique.`);
+    } else {
+      connectorIds.add(connectorId);
+    }
+    if (
+      camera.ControlId !== null &&
+      !/^(?:[1-9]|1[0-5])$/.test(camera.ControlId.trim())
+    ) {
+      errors.push(`${camera.Name || 'Camera'} Camera ControlId must be between 1 and 15 or Disabled.`);
+    }
   }
 
   const cameraBindingCounts = new Map<string, number>();
@@ -174,7 +187,7 @@ export function buildMacroConfig(state: ConfiguratorState): GeneratedMacroConfig
       ButtonAction: cameraActions.get(camera.id)!,
       Name: camera.Name.trim(),
       ConnectorId: camera.ConnectorId.trim(),
-      ControlId: camera.ControlId.trim(),
+      ControlId: camera.ControlId === null ? null : camera.ControlId.trim(),
     })),
   };
 }
@@ -230,7 +243,8 @@ class ObjectLiteralParser {
     const identifier = this.parseIdentifier();
     if (identifier === 'true') return true;
     if (identifier === 'false') return false;
-    if (identifier === 'null' || identifier === 'undefined') return undefined;
+    if (identifier === 'null') return null;
+    if (identifier === 'undefined') return undefined;
     throw new Error(`Unsupported configuration value "${identifier || character || 'end of file'}".`);
   }
 
@@ -389,6 +403,11 @@ function configString(value: unknown, label: string): string {
   return String(value);
 }
 
+function configNullableString(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return configString(value, label);
+}
+
 function configNumber(value: unknown, label: string): number {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new Error(`${label} must be a number.`);
@@ -447,7 +466,7 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
       id,
       Name: configString(camera.Name, `config.cameras[${index}].Name`),
       ConnectorId: configString(camera.ConnectorId, `config.cameras[${index}].ConnectorId`),
-      ControlId: configString(camera.ControlId, `config.cameras[${index}].ControlId`),
+      ControlId: configNullableString(camera.ControlId, `config.cameras[${index}].ControlId`),
     };
   });
 
@@ -551,6 +570,9 @@ export function parseConfiguratorStateFromMacro(macroSource: string): Configurat
   };
 
   const errors = validateConfiguratorState(state);
-  if (errors.length) throw new Error(errors.join(' '));
+  const blockingErrors = errors.filter((error) => !error.endsWith(
+    'Camera ControlId must be between 1 and 15 or Disabled.',
+  ));
+  if (blockingErrors.length) throw new Error(blockingErrors.join(' '));
   return state;
 }

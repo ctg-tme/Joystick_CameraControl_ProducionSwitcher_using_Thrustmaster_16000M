@@ -66,7 +66,8 @@ describe('configurator workflow presentation', () => {
     expect(source).toContain('<strong>Fetch Macro from Device</strong>');
     expect(source).toContain("this.openDeviceConnection(true);");
     expect(source).not.toContain('About this project');
-    expect(source).toContain("if (currentStep === 1) return '';");
+    expect(source).not.toContain("if (currentStep === 1) return '';");
+    expect(source).toContain('Continue to ${WORKFLOW_STEPS[next - 1].title}');
   });
 
   it('keeps the preflight context concise and links detailed requirements to the README', async () => {
@@ -83,6 +84,23 @@ describe('configurator workflow presentation', () => {
     expect(source).not.toContain('different HID profile that is incompatible with RoomOS');
     expect(styles).toContain('.purpose-checklist');
     expect(styles).toContain('.live-demo img');
+  });
+
+  it('places the solution highlight cards below the hero image', async () => {
+    const [source, styles] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+    ]);
+    const sidebar = source.indexOf('<div class="hero-sidebar">');
+    const heroImage = source.indexOf('<figure class="live-demo">', sidebar);
+    const highlights = source.indexOf('<ul class="solution-highlights"', sidebar);
+    const checklist = source.indexOf('<aside class="purpose-checklist"', sidebar);
+
+    expect(sidebar).toBeGreaterThan(-1);
+    expect(heroImage).toBeGreaterThan(sidebar);
+    expect(highlights).toBeGreaterThan(heroImage);
+    expect(checklist).toBeGreaterThan(highlights);
+    expect(styles).toMatch(/\.solution-highlights \{[^}]*margin: 0;/s);
   });
 
   it('opens device connection as a modal without navigating the workflow', async () => {
@@ -103,6 +121,36 @@ describe('configurator workflow presentation', () => {
     expect(source).toContain('id="camera-actions-title">Configured cameras</h3>');
     expect(source).not.toContain('this.renderButtonMap()}${this.renderManifest()');
     expect(source).not.toContain('class="config-recovery"');
+  });
+
+  it('groups Macro Settings by the generated config hierarchy', async () => {
+    const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
+    const settingsSource = source.slice(
+      source.indexOf('private renderSettings()'),
+      source.indexOf('private renderCameras()'),
+    );
+
+    for (const path of [
+      'config.documentation',
+      'config.previewDisplay',
+      'config.userInterface',
+      'config.joystick',
+      'config.joystick.Camera',
+    ]) {
+      expect(source).toContain(`path: '${path}'`);
+      expect(settingsSource).not.toContain(path);
+    }
+
+    expect(settingsSource).toContain('class="settings-group settings-group-joystick"');
+    expect(settingsSource).toContain('class="settings-subgroup"');
+    expect(settingsSource).not.toContain('class="settings-path"');
+    expect(settingsSource).not.toContain('<small>Off prevents all Preview controls, switching, and display commands.</small>');
+    expect(settingsSource).not.toContain('<small>Disabled leaves the current Main source unchanged when Joystick Controls is enabled.</small>');
+    expect(source).toContain('Off prevents all Preview controls, switching, and display commands.');
+    expect(source).toContain('Disabled leaves the current Main source unchanged;');
+    expect(source).toContain('<strong class="field-tooltip-path">${escapeHtml(definition.path)}</strong>');
+    expect(source).toContain("label: 'Ramp divisor'");
+    expect(source).not.toContain("label: 'Precision divisor'");
   });
 
   it('uses bounded dropdowns for all numeric macro settings', async () => {
@@ -150,11 +198,12 @@ describe('configurator workflow presentation', () => {
     expect(source).toContain('The password and expected serial number are never cached.');
   });
 
-  it('keeps button assignment fields in left-to-right columns until the compact breakpoint', async () => {
+  it('keeps grouped settings and button assignment fields in columns until the compact breakpoint', async () => {
     const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
 
     expect(styles).toContain('grid-template-columns: minmax(300px, 480px) minmax(420px, 1fr);');
-    expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));');
+    expect(styles).toContain('grid-template-columns: repeat(12, minmax(0, 1fr));');
+    expect(styles).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
     expect(styles).toContain('grid-template-columns: 34px minmax(72px, .6fr) minmax(128px, 1.1fr) minmax(112px, .9fr);');
     expect(styles).not.toContain('.button-assignment-page .map-layout');
     expect(styles).toContain('@media (max-width: 1199px)');
@@ -189,9 +238,14 @@ describe('configurator workflow presentation', () => {
 
     expect(source).toContain('<h2>Download Macro</h2>');
     expect(source).toContain("const deviceAction = isUpdate ? 'Update Macro' : 'Install Macro';");
+    expect(source).toContain('class="review-device-status');
+    expect(source).toContain('class="review-install-result');
+    expect(source).toContain('id="disconnect-device"');
+    expect(source).not.toContain('private renderInstaller');
+    expect(source).not.toContain('Installation plan');
     expect(source).toContain("private installationMode: InstallationMode = 'install';");
     expect(source).toContain("this.installationMode = 'update';");
-    expect(source).toContain("if (actionAfterConnect === 'install') await this.installDevice();");
+    expect(source).toContain("if (actionAfterConnect === 'install') await this.openInstallConfirmation();");
     expect(source).toContain('<h2>Download Operator Guide</h2>');
     expect(source).toContain('Download Operator Guide (PDF)');
     expect(source).toContain('<h2>Config object</h2>');
@@ -234,6 +288,43 @@ describe('configurator workflow presentation', () => {
     expect(manualSource).toContain('enablementImageDataUrl');
   });
 
+  it('renders an accessible responsive Release selector and keeps the guide available for unknown sources', async () => {
+    const [appSource, styles] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(appSource).toContain('<label class="release-picker" for="base-macro-release">');
+    expect(appSource.match(/<span>Choose Release<\/span>/g)).toHaveLength(2);
+    expect(appSource).toContain('id="base-macro-release" ${this.busy ? \'disabled\' : \'\'}>');
+    expect(appSource).not.toContain('<span>Base macro release</span>');
+    expect(appSource).not.toContain('base-macro-release-help');
+    expect(appSource).not.toContain('The selected base Release determines its exact dependency Release.');
+    expect(appSource).toContain('Local Development · Macro Version');
+    expect(appSource).toContain("isLocalDevelopmentHost(window.location?.hostname ?? '')");
+    expect(appSource).toContain('Imported macro · Release unknown');
+    expect(appSource).toContain('Migrate to latest release (${escapeHtml(catalog.latest)})');
+    expect(appSource).toContain('const hasSupportedTarget = this.hasSupportedTarget();');
+    expect(appSource).toContain('hasSupportedTarget && configurationIsValid');
+    expect(appSource).toContain('id="download-operator-guide" type="button">');
+    expect(styles).toMatch(/\.installer-introduction-heading \{[\s\S]*?justify-content: space-between;/);
+    expect(styles).toMatch(/@media \(max-width: 720px\)[\s\S]*?\.installer-introduction-heading,[\s\S]*?flex-direction: column;/);
+    expect(styles).toContain('border-color: var(--control-border-focus);');
+  });
+
+  it('uses only packaged dependency sources in the existing installation sequence', async () => {
+    const [appSource, preparationSource] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../scripts/prepare-assets.mjs', import.meta.url), 'utf8'),
+    ]);
+
+    expect(appSource).toContain('dependencies: this.sources.dependencies.map((dependency) => ({');
+    expect(appSource).toContain('source: dependency.source,');
+    expect(preparationSource).not.toContain('raw.githubusercontent.com');
+    expect(preparationSource).not.toContain('/main/');
+    expect(appSource).not.toContain('sourceUrl');
+  });
+
   it('keeps About focused on current project details', async () => {
     const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
     const aboutSource = source.slice(
@@ -241,9 +332,12 @@ describe('configurator workflow presentation', () => {
       source.indexOf('private renderOutput()'),
     );
 
-    expect(aboutSource).toContain("const macroVersion = this.sources?.manifest.version ?? 'Loading…';");
+    expect(aboutSource).toContain("const macroVersion = this.catalog?.latest ?? 'Unavailable';");
     expect(aboutSource).toContain('<dt>Macro version</dt>');
+    expect(aboutSource).toContain('<small>Latest published Release</small>');
     expect(aboutSource).toContain('<dt>Macro file</dt>');
+    expect(aboutSource).toContain('<dt>Selected source</dt>');
+    expect(aboutSource).toContain('<dt>Dependency Release</dt>');
     expect(aboutSource).toContain('<dt>Camera sources</dt>');
     expect(aboutSource).toContain('<p class="about-product-model">${JOYSTICK_MODEL}</p>');
     expect(aboutSource).toContain('Project repository');
@@ -268,15 +362,47 @@ describe('configurator workflow presentation', () => {
     expect(styles).toContain('bottom: var(--site-footer-height);');
     expect(styles).toContain('padding-bottom: var(--site-footer-height);');
     expect(styles).toContain('border-top: 1px solid var(--base-border-default);');
+    const mobileFooter = styles.slice(
+      styles.indexOf('@media (max-width: 600px)'),
+      styles.indexOf('@media (max-width: 720px)'),
+    );
+    expect(mobileFooter).toMatch(/\.site-footer a \{\s*justify-self: end;/);
   });
 
   it('uses complete Magnetic dark tokens and inverse text tokens on the dark hero', async () => {
-    const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
+    const [styles, themeVariables] = await Promise.all([
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+      readFile(new URL('./vendor/magnetic/token-theme-variables.css', import.meta.url), 'utf8'),
+    ]);
 
-    expect(styles).toContain('--interact-border-weak-default: #656c75;');
-    expect(styles).toContain('--overlay-bg-default: #000000bf;');
+    const darkTheme = themeVariables.slice(
+      themeVariables.indexOf('[data-cds-theme="magnetic-dark"]'),
+      themeVariables.indexOf('[data-cds-theme="magnetic-light"]'),
+    );
+    expect(darkTheme).toContain('--interact-border-weak-default: #656c75;');
+    expect(darkTheme).toContain('--overlay-bg-default: #000000b2;');
     expect(styles).toMatch(/\.hero-read-more a,[\s\S]*?color: var\(--inverse-text-default\);/);
     expect(styles).not.toMatch(/\.hero-read-more a,[^{]*\{[^}]*color: var\(--interact-bg-/s);
+  });
+
+  it('uses the current Magnetic theme asset and semantic inverse surfaces on the Introduction page', async () => {
+    const [appSource, mainSource, styles, themeVariables, vendorReadme] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./main.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+      readFile(new URL('./vendor/magnetic/token-theme-variables.css', import.meta.url), 'utf8'),
+      readFile(new URL('./vendor/magnetic/README.md', import.meta.url), 'utf8'),
+    ]);
+
+    expect(appSource).toContain('document.documentElement.dataset.cdsTheme = `magnetic-${effectiveTheme}`;');
+    expect(mainSource).toContain("import './vendor/magnetic/token-theme-variables.css';");
+    expect(themeVariables).toContain('[data-cds-theme="magnetic-light"]');
+    expect(themeVariables).toContain('[data-cds-theme="magnetic-dark"]');
+    expect(vendorReadme).toContain('token-theme-variables.css');
+    expect(styles).toMatch(/\.hero \{[\s\S]*?var\(--inverse-bg-gradient-default\);/);
+    expect(styles).toMatch(/\.installation-paths article \{[\s\S]*?background: var\(--inverse-bg-weak-default\);/);
+    expect(styles).not.toContain('rgb(15 18 20 / 34%)');
+    expect(styles).not.toMatch(/:root\[data-theme="dark"\] \{[\s\S]*?--base-bg-default:/);
   });
 
   it('shows accessible configuration definitions from information icons', async () => {
@@ -307,11 +433,52 @@ describe('configurator workflow presentation', () => {
 
     expect(appSource).toContain("label: 'ZOOM Ramp Speed'");
     expect(appSource).toContain('class="field-info-trigger"');
+    expect(appSource).toContain('class="field-tooltip-path"');
     expect(appSource).toContain('role="tooltip"');
+    expect(appSource).not.toContain('field-optional');
+    expect(appSource).not.toContain('(optional)');
+    expect(styles).not.toContain('.field-optional');
     expect(styles).toContain('.field-info:focus-within .field-tooltip');
+    expect(styles).toContain('.field-tooltip-path');
     expect(styles).toContain('background: var(--inverse-bg-weak-default);');
     expect(readme).toContain('### Configuration reference');
     expect(readme).toContain('`config.joystick.Camera.SlowModeDivisor`');
+  });
+
+  it('presents read-only camera discovery beside manual camera configuration', async () => {
+    const [source, styles] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(source).toContain('<h3>Configured cameras</h3>');
+    expect(source).toContain('id="discovered-cameras-title">Discovered cameras</h3>');
+    expect(source).toContain('id="discover-cameras"');
+    expect(source).toContain('id="refresh-cameras"');
+    expect(source).toContain('data-use-discovered-camera');
+    expect(source).toContain('Disabled (USB/ThirdParty)');
+    expect(source).toContain("type PendingDeviceAction = 'install' | 'fetch-macro' | 'discover-cameras'");
+    expect(source).toContain("if (actionAfterConnect === 'discover-cameras') await this.discoverCameras(true);");
+    expect(source).toContain('Four-camera limit reached');
+    expect(source).toContain('class="discovered-camera-card discovered-camera-card-${source.connection}"');
+    expect(source).toContain('class="discovered-camera-name"');
+    expect(source).toContain('class="field-info discovered-camera-info"');
+    expect(source).toContain('class="field-tooltip discovered-camera-tooltip"');
+    expect(source).toContain('`ConnectorId: ${source.ConnectorId}`');
+    expect(source).toContain("`ControlId: ${source.ControlId === null ? 'Disabled' : source.ControlId}`");
+    expect(source).toContain("`Model: ${source.model ?? 'Model unavailable'}`");
+    expect(source).toContain("const nextDisabled = currentStep === 2 && validateConfiguratorState(this.state).length > 0;");
+    expect(styles).toContain('.camera-source-layout');
+    expect(styles).toContain('.discovered-cameras-pane');
+    expect(styles).toContain('.discovered-camera-card');
+    expect(styles).toMatch(/\.discovered-camera-card \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto 20px;/s);
+    expect(styles).toMatch(/\.discovered-camera-card-connected \{[^}]*border: 2px solid var\(--camera-connected-border\);/s);
+    expect(styles).toMatch(/\.discovered-camera-card-disconnected \{[^}]*border: 2px dotted var\(--camera-disconnected-border\);/s);
+    expect(styles).toMatch(/\.discovered-camera-card-unavailable \{[^}]*border: 2px dotted var\(--camera-unavailable-border\);/s);
+    expect(styles).toMatch(/\.discovered-camera-name \{[^}]*white-space: nowrap;/s);
+    expect(styles).toMatch(/\.configured-cameras-pane \.camera-grid \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(styles).toMatch(/\.camera-fields \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(styles).toMatch(/\.camera-fields \.wide \{[^}]*grid-column: 1 \/ -1;/s);
   });
 
   it('allows camera-field tooltips to escape the camera card boundary', async () => {

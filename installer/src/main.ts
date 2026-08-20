@@ -1,5 +1,5 @@
 import { ConfiguratorApp } from './app';
-import './vendor/magnetic/token-theme-light-variables.css';
+import './vendor/magnetic/token-theme-variables.css';
 import './styles.css';
 
 const root = document.querySelector<HTMLElement>('#app');

@@ -22,6 +22,8 @@ export interface OperatorGuideCamera {
   name: string;
   buttonNumbers: number[];
   isDefault: boolean;
+  videoOnly: boolean;
+  controlNote?: 'Video only — joystick camera control unavailable';
 }
 
 export interface OperatorGuideModel {
@@ -70,8 +72,9 @@ function resolvedButtonAction(
 
   const camera = state.cameras.find((candidate) => candidate.id === assignmentCameraId(assignment));
   if (camera) {
+    const name = camera.Name.trim() || 'Unnamed camera';
     return {
-      action: camera.Name.trim() || 'Unnamed camera',
+      action: camera.ControlId === null ? `${name} — video only` : name,
       category: 'camera',
       available: true,
     };
@@ -139,6 +142,10 @@ export function createOperatorGuideModel(state: ConfiguratorState): OperatorGuid
         .filter((button) => state.assignments[button.number] === cameraAssignment(camera.id))
         .map((button) => button.number),
       isDefault: camera.id === state.defaultCameraId,
+      videoOnly: camera.ControlId === null,
+      controlNote: camera.ControlId === null
+        ? 'Video only — joystick camera control unavailable'
+        : undefined,
     })),
     enablement: {
       heading: 'Enable Joystick Controls',
