@@ -189,12 +189,13 @@ describe('direct installation connection flow', () => {
     expect(workflow.currentStep).toBe(1);
   });
 
-  it('continues the requested installation immediately after connecting and verifying', async () => {
+  it('shows the post-verification confirmation before a first installation writes to the device', async () => {
     let state: DeviceInstallationState = { connected: false };
     const install = vi.fn(async (_sources: InstallSources, onProgress: (message: string) => void) => {
       onProgress('Installed test macros');
       return { kind: 'ready' as const, message: 'Ready' };
     });
+    const recheck = vi.fn(async () => state);
     const session: DeviceInstallationSession = {
       snapshot: () => state,
       connect: vi.fn(async () => {
@@ -212,7 +213,7 @@ describe('direct installation connection flow', () => {
       }),
       fetchInstalledMacro: vi.fn(),
       discoverCameraSources: vi.fn(async () => []),
-      recheck: vi.fn(async () => state),
+      recheck,
       install,
       disconnect: vi.fn(),
     };
@@ -223,8 +224,10 @@ describe('direct installation connection flow', () => {
       releaseResolution: MacroReleaseResolution;
       credentials: DeviceCredentials;
       expectedSerial: string;
+      installConfirmationOpen: boolean;
       openDeviceConnection(fetchMacro: boolean): void;
       connectDevice(): Promise<void>;
+      renderInstallConfirmationModal(): string;
     };
     testableApp.sources = installerSources;
     testableApp.catalog = catalog;
@@ -244,7 +247,44 @@ describe('direct installation connection flow', () => {
     testableApp.openDeviceConnection(false);
     await testableApp.connectDevice();
 
-    expect(install).toHaveBeenCalledOnce();
+    expect(install).not.toHaveBeenCalled();
+    expect(recheck).toHaveBeenCalledOnce();
+    expect(testableApp.installConfirmationOpen).toBe(true);
+    expect(testableApp.renderInstallConfirmationModal()).toContain('Room Kit Pro · RoomOS 26');
+    expect(testableApp.renderInstallConfirmationModal()).toContain('No active calls detected');
+  });
+
+  it('surfaces an unexpected device disconnect in the UI', () => {
+    let onConnectionLost: ((message: string) => void) | undefined;
+    const session = {
+      snapshot: () => ({ connected: false }),
+      connect: vi.fn(),
+      fetchInstalledMacro: vi.fn(),
+      discoverCameraSources: vi.fn(async () => []),
+      recheck: vi.fn(),
+      install: vi.fn(),
+      disconnect: vi.fn(),
+      onConnectionLost: vi.fn((listener: (message: string) => void) => {
+        onConnectionLost = listener;
+        return vi.fn();
+      }),
+    } satisfies DeviceInstallationSession;
+    const app = new ConfiguratorApp(testRoot(), session, testWorkflow());
+    const testableApp = app as unknown as {
+      errorMessage: string;
+      statusMessage: string;
+      installConfirmationOpen: boolean;
+      renderReviewActions(): string;
+    };
+    testableApp.installConfirmationOpen = true;
+
+    onConnectionLost?.('The RoomOS connection was lost. Reconnect before continuing.');
+
+    expect(testableApp.errorMessage).toContain('RoomOS connection was lost');
+    expect(testableApp.statusMessage).toBe('The verified device connection ended unexpectedly.');
+    expect(testableApp.installConfirmationOpen).toBe(false);
+    expect(testableApp.renderReviewActions()).toContain('Verified device connection ended');
+    expect(testableApp.renderReviewActions()).toContain('Reconnect before continuing.');
   });
 
   it('connects and discovers cameras without fetching or installing the macro', async () => {

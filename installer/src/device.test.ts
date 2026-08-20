@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createDeviceInstallationSession,
   discoverCameraSourcesFromResponses,
@@ -18,6 +19,17 @@ const credentials = {
   username: 'admin',
   password: 'secret',
 };
+
+function createDeviceEmitter(fields: Record<string, unknown> = {}): DeviceXapi {
+  return Object.assign(new EventEmitter(), {
+    close: vi.fn(),
+    ...fields,
+  }) as unknown as DeviceXapi;
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('device installation', () => {
   it('discovers camera connectors and joins camera status by CameraId', () => {
@@ -241,14 +253,128 @@ describe('device installation', () => {
     });
   });
 
+  it.each(['error', 'close'] as const)('invalidates the session and rejects pending work on socket %s', async (event) => {
+    const xapi = createDeviceEmitter();
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify: vi.fn(async () => verifiedDevice),
+      fetch: vi.fn(() => new Promise<string>(() => undefined)),
+    });
+    const onConnectionLost = vi.fn();
+    session.onConnectionLost?.(onConnectionLost);
+    await session.connect(credentials, 'SERIAL-1');
+    const pendingFetch = session.fetchInstalledMacro('macro');
+
+    if (event === 'error') {
+      (xapi as unknown as EventEmitter).emit('error', new Error('socket reset'));
+    } else {
+      (xapi as unknown as EventEmitter).emit('close');
+    }
+
+    await expect(pendingFetch).rejects.toThrow('RoomOS connection was lost');
+    expect(session.snapshot()).toEqual({ connected: false });
+    expect(onConnectionLost).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['fetch', 'Fetching the installed macro'],
+    ['discovery', 'Discovering camera sources'],
+    ['recheck', 'Rechecking the verified device'],
+  ] as const)('disconnects a session when %s reaches its deadline', async (operation, description) => {
+    vi.useFakeTimers();
+    const xapi = createDeviceEmitter();
+    let verificationCount = 0;
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify: vi.fn(() => {
+        verificationCount += 1;
+        return verificationCount === 1
+          ? Promise.resolve(verifiedDevice)
+          : new Promise<VerifiedDevice>(() => undefined);
+      }),
+      fetch: vi.fn(() => new Promise<string>(() => undefined)),
+      discover: vi.fn(() => new Promise<never>(() => undefined)),
+      operationTimeoutMs: 25,
+    });
+    await session.connect(credentials, 'SERIAL-1');
+
+    const pendingOperation = operation === 'fetch'
+      ? session.fetchInstalledMacro('macro')
+      : operation === 'discovery'
+        ? session.discoverCameraSources()
+        : session.recheck();
+    const rejection = expect(pendingOperation).rejects.toThrow(`${description} timed out`);
+    await vi.advanceTimersByTimeAsync(26);
+
+    await rejection;
+    expect(session.snapshot()).toEqual({ connected: false });
+  });
+
+  it('applies a deadline to each RoomOS installation command', async () => {
+    vi.useFakeTimers();
+    const command = vi.fn(() => new Promise(() => undefined));
+    const stopFeedback = Object.assign(vi.fn(), { registration: Promise.resolve() });
+    const xapi = createDeviceEmitter({
+      command,
+      event: { on: vi.fn(() => stopFeedback) },
+    });
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify: vi.fn(async () => verifiedDevice),
+    });
+    await session.connect(credentials, 'SERIAL-1');
+
+    const installation = session.install({
+      dependencies: [{ name: 'dependency', source: 'source' }],
+      macroName: 'macro',
+      macroSource: 'source',
+    }, vi.fn());
+    const rejection = expect(installation).rejects.toThrow('RoomOS command Macros Macro Deactivate timed out');
+    await vi.advanceTimersByTimeAsync(20_001);
+
+    await rejection;
+    expect(session.snapshot()).toEqual({ connected: false });
+  });
+
+  it('applies a deadline to readiness feedback registration before issuing commands', async () => {
+    vi.useFakeTimers();
+    const command = vi.fn();
+    const stopFeedback = Object.assign(vi.fn(), {
+      registration: new Promise(() => undefined),
+    });
+    const xapi = createDeviceEmitter({
+      command,
+      event: { on: vi.fn(() => stopFeedback) },
+    });
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify: vi.fn(async () => verifiedDevice),
+    });
+    await session.connect(credentials, 'SERIAL-1');
+
+    const installation = session.install({
+      dependencies: [{ name: 'dependency', source: 'source' }],
+      macroName: 'macro',
+      macroSource: 'source',
+    }, vi.fn());
+    const rejection = expect(installation).rejects.toThrow('Registering macro readiness feedback timed out');
+    await vi.advanceTimersByTimeAsync(20_001);
+
+    await rejection;
+    expect(command).not.toHaveBeenCalled();
+    expect(session.snapshot()).toEqual({ connected: false });
+  });
+
   it('saves the dependency before the configured macro, activates, restarts, and observes readiness', async () => {
     let feedback: ((event: unknown) => void) | undefined;
     const stopFeedback = vi.fn();
     const command = vi.fn(async (path: string, _params?: unknown, _body?: unknown) => {
       if (path === 'Macros Runtime Restart') {
-        feedback?.({
-          MacroName: 'Joystick_CameraControl_ProductionSwitcher',
-          Message: 'Joystick Ready with Pan/Tilt/Zoom',
+        queueMicrotask(() => {
+          feedback?.({
+            MacroName: 'Joystick_CameraControl_ProductionSwitcher',
+            Message: 'Joystick Ready with Pan/Tilt/Zoom',
+          });
         });
       }
       return { status: 'OK' };
@@ -295,6 +421,59 @@ describe('device installation', () => {
     expect(progress.at(-1)).toContain('Waiting');
     expect(stopFeedback).toHaveBeenCalledOnce();
     expect(session.snapshot().installationResult).toEqual(result);
+  });
+
+  it('awaits feedback registration and ignores ready logs emitted before runtime restart', async () => {
+    let feedback: ((event: unknown) => void) | undefined;
+    let resolveRegistration: (() => void) | undefined;
+    const registration = new Promise<void>((resolve) => {
+      resolveRegistration = resolve;
+    });
+    let resolveRestart: (() => void) | undefined;
+    const restart = new Promise<void>((resolve) => {
+      resolveRestart = resolve;
+    });
+    const command = vi.fn(async (path: string) => {
+      if (path === 'Macros Runtime Restart') await restart;
+      return { status: 'OK' };
+    });
+    const stopFeedback = Object.assign(vi.fn(), { registration });
+    const xapi = createDeviceEmitter({
+      command,
+      event: {
+        on: vi.fn((_path: string, callback: (event: unknown) => void) => {
+          feedback = callback;
+          return stopFeedback;
+        }),
+      },
+    });
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify: vi.fn(async () => verifiedDevice),
+    });
+    await session.connect(credentials, 'SERIAL-1');
+
+    let settled = false;
+    const installation = session.install({
+      dependencies: [{ name: 'dependency', source: 'source' }],
+      macroName: 'macro',
+      macroSource: 'source',
+    }, vi.fn()).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(feedback).toBeTypeOf('function'));
+    feedback?.({ MacroName: 'macro', Message: 'Joystick Ready with Pan/Tilt/Zoom' });
+    expect(command).not.toHaveBeenCalled();
+
+    resolveRegistration?.();
+    await vi.waitFor(() => expect(command).toHaveBeenCalledWith('Macros Runtime Restart'));
+    resolveRestart?.();
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+
+    feedback?.({ MacroName: 'macro', Message: 'Joystick Ready with Pan/Tilt/Zoom' });
+    await expect(installation).resolves.toMatchObject({ kind: 'ready' });
+    expect(stopFeedback).toHaveBeenCalledOnce();
   });
 
   it('rechecks calls inside the session immediately before installation', async () => {

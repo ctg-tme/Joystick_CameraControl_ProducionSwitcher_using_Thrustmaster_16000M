@@ -245,7 +245,7 @@ describe('configurator workflow presentation', () => {
     expect(source).not.toContain('Installation plan');
     expect(source).toContain("private installationMode: InstallationMode = 'install';");
     expect(source).toContain("this.installationMode = 'update';");
-    expect(source).toContain("if (actionAfterConnect === 'install') await this.installDevice();");
+    expect(source).toContain("if (actionAfterConnect === 'install') await this.openInstallConfirmation();");
     expect(source).toContain('<h2>Download Operator Guide</h2>');
     expect(source).toContain('Download Operator Guide (PDF)');
     expect(source).toContain('<h2>Config object</h2>');

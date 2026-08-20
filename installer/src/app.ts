@@ -175,6 +175,10 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#039;');
 }
 
+function displayRoomOsVersion(value: string): string {
+  return /^roomos\b/i.test(value.trim()) ? value.trim() : `RoomOS ${value.trim()}`;
+}
+
 function integerOptions(minimum: number, maximum: number, selected: number): string {
   return Array.from({ length: maximum - minimum + 1 }, (_, index) => minimum + index)
     .map((value) => `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`)
@@ -232,6 +236,7 @@ export class ConfiguratorApp {
   private busy = false;
   private statusMessage = '';
   private errorMessage = '';
+  private deviceConnectionError = '';
   private configurationMessage = '';
   private configurationError = '';
   private discoveredCameras: DiscoveredCameraSource[] = [];
@@ -245,7 +250,16 @@ export class ConfiguratorApp {
     private readonly root: HTMLElement,
     private readonly deviceSession: DeviceInstallationSession = createDeviceInstallationSession(),
     private readonly workflow: WorkflowNavigation = createWorkflowNavigation(),
-  ) {}
+  ) {
+    this.deviceSession.onConnectionLost?.((message) => {
+      this.clearCameraDiscovery();
+      this.installConfirmationOpen = false;
+      this.deviceConnectionError = message;
+      this.errorMessage = message;
+      this.statusMessage = 'The verified device connection ended unexpectedly.';
+      this.render();
+    });
+  }
 
   async initialize(): Promise<void> {
     this.applyTheme();
@@ -487,13 +501,16 @@ export class ConfiguratorApp {
             ${verifiedDevice ? `
               <div class="review-device-status ${verifiedDevice.serialMatches && verifiedDevice.activeCalls === 0 ? 'success' : 'error'}" role="status" aria-live="polite">
                 <strong>${verifiedDevice.serialMatches ? 'Serial confirmed' : 'Serial mismatch — installation blocked'}</strong>
-                <span>${escapeHtml(verifiedDevice.productPlatform)} · RoomOS ${escapeHtml(verifiedDevice.roomOsVersion)}</span>
+                <span>${escapeHtml(verifiedDevice.productPlatform)} · ${escapeHtml(displayRoomOsVersion(verifiedDevice.roomOsVersion))}</span>
                 <span>${verifiedDevice.activeCalls === 0 ? 'No active calls' : `${verifiedDevice.activeCalls} active call(s) — installation blocked`}</span>
               </div>` : `
               <div class="review-device-status neutral" role="status" aria-live="polite">
                 <strong>Not connected</strong>
                 <span>Connect and verify the exact device before installation.</span>
               </div>`}
+            ${!session.connected && this.deviceConnectionError ? `
+              <div class="callout error" role="alert"><strong>Verified device connection ended</strong><p>${escapeHtml(this.deviceConnectionError)}</p></div>
+            ` : ''}
             ${installResult ? `
               <div class="review-install-result ${installResult.kind === 'ready' ? 'success' : installResult.kind === 'failed' ? 'error' : 'warning'}" role="status" aria-live="polite">
                 <strong>${installResult.kind === 'ready' ? 'Installation ready' : installResult.kind === 'failed' ? 'Initialization failed' : 'Initialization not confirmed'}</strong>
@@ -1045,7 +1062,7 @@ export class ConfiguratorApp {
             <button class="icon-button" type="button" data-close-device-connection aria-label="Close device connection dialog" ${this.busy ? 'disabled' : ''}>×</button>
           </header>
           <div class="confirm-dialog-content device-connection-content">
-            <p>${isDiscovery ? 'Verify the exact device, then read its camera input configuration and status without fetching the macro or changing RoomOS.' : isFetch ? 'Verify the exact device, then read its installed solution macro without changing or restarting RoomOS.' : `Verify the exact device, then immediately ${operation} the configured solution. This restarts every active macro on the device.`}</p>
+            <p>${isDiscovery ? 'Verify the exact device, then read its camera input configuration and status without fetching the macro or changing RoomOS.' : isFetch ? 'Verify the exact device, then read its installed solution macro without changing or restarting RoomOS.' : `Verify the exact device, review its product, RoomOS version, and call status, then confirm before the installer ${operation}s the configured solution.`}</p>
             <div class="device-form">
               <label class="field wide"><span>Device address</span><input id="device-host" placeholder="room-device.example.com" value="${escapeHtml(this.credentials.host)}" ${this.busy ? 'disabled' : ''}></label>
               <label class="field"><span>Administrator username</span><input id="device-username" autocomplete="username" value="${escapeHtml(this.credentials.username)}" ${this.busy ? 'disabled' : ''}></label>
@@ -1059,7 +1076,7 @@ export class ConfiguratorApp {
           <footer>
             <button class="button secondary" id="trust-certificate" type="button" ${this.busy ? 'disabled' : ''}>Open certificate page</button>
             <button class="button secondary" type="button" data-close-device-connection ${this.busy ? 'disabled' : ''}>Cancel</button>
-            <button class="button primary" id="connect-device" type="button" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Connecting…' : isDiscovery ? 'Connect, verify, and discover' : isFetch ? 'Connect, verify, and fetch' : `Connect, verify, and ${operation}`}</button>
+            <button class="button primary" id="connect-device" type="button" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Connecting…' : isDiscovery ? 'Connect, verify, and discover' : isFetch ? 'Connect, verify, and fetch' : 'Connect and verify'}</button>
           </footer>
         </div>
       </dialog>`;
@@ -1067,6 +1084,7 @@ export class ConfiguratorApp {
 
   private renderInstallConfirmationModal(): string {
     const session = this.deviceSession.snapshot();
+    const verifiedDevice = session.verifiedDevice;
     const activeCalls = session.verifiedDevice?.activeCalls ?? 0;
     const isUpdate = this.installationMode === 'update';
     const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
@@ -1078,6 +1096,12 @@ export class ConfiguratorApp {
             <button class="icon-button" type="button" data-close-install-confirmation aria-label="Close confirmation dialog">×</button>
           </header>
           <div class="confirm-dialog-content">
+            ${verifiedDevice ? `
+              <div class="review-device-status ${verifiedDevice.serialMatches && activeCalls === 0 ? 'success' : 'error'}" role="status" aria-live="polite">
+                <strong>${verifiedDevice.serialMatches ? 'Serial confirmed' : 'Serial mismatch — installation blocked'}</strong>
+                <span>${escapeHtml(verifiedDevice.productPlatform)} · ${escapeHtml(displayRoomOsVersion(verifiedDevice.roomOsVersion))}</span>
+              </div>
+            ` : ''}
             <p>The installer will save both macros, activate the configured solution, and restart the RoomOS macro runtime. Every active macro on this device will restart.</p>
             ${activeCalls > 0 ? `
               <div class="callout warning"><strong>Device is currently on a call</strong><p>${activeCalls} active call(s) detected. The ${actionLabel.toLowerCase()} is blocked until the call has ended. Close this prompt and try again afterward.</p></div>
@@ -1711,6 +1735,7 @@ export class ConfiguratorApp {
     this.pendingDeviceAction = discoverCameras ? 'discover-cameras' : fetchMacro ? 'fetch-macro' : 'install';
     this.deviceConnectionOpen = true;
     this.errorMessage = '';
+    this.deviceConnectionError = '';
     this.statusMessage = '';
     this.render();
   }
@@ -1763,6 +1788,7 @@ export class ConfiguratorApp {
   private async connectDevice(): Promise<void> {
     this.captureDeviceFields();
     this.errorMessage = '';
+    this.deviceConnectionError = '';
     let actionAfterConnect: PendingDeviceAction | undefined;
     try {
       this.busy = true;
@@ -1778,7 +1804,7 @@ export class ConfiguratorApp {
         ? 'Connected and verified. Reading the installed macro.'
         : actionAfterConnect === 'discover-cameras'
           ? 'Connected and verified. Discovering cameras.'
-          : 'Connected and verified. Starting installation.';
+          : 'Connected and verified. Review the device details before confirming installation.';
       this.deviceConnectionOpen = false;
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : String(error);
@@ -1789,13 +1815,14 @@ export class ConfiguratorApp {
     }
     if (actionAfterConnect === 'fetch-macro') await this.fetchInstalledMacro();
     if (actionAfterConnect === 'discover-cameras') await this.discoverCameras(true);
-    if (actionAfterConnect === 'install') await this.installDevice();
+    if (actionAfterConnect === 'install') await this.openInstallConfirmation();
   }
 
   private disconnectDevice(): void {
     this.deviceSession.disconnect();
     this.clearCameraDiscovery();
     this.credentials.password = '';
+    this.deviceConnectionError = '';
     this.statusMessage = 'Disconnected. Credentials were cleared from the active connection.';
     this.pendingDeviceAction = undefined;
     this.deviceConnectionOpen = false;
