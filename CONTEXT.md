@@ -47,6 +47,10 @@ _Avoid_: Logical button ID
 The readable, handedness-dependent Thrustmaster class identifier, such as `STICK_TRIGGER` or `BASE_LEFT_1`, used as a public `config.controls` key.
 _Avoid_: Configuration button number
 
+**Verified Device Connection**:
+An installer connection to the intended RoomOS device whose identity has been confirmed before device configuration or status is read or changed.
+_Avoid_: Device socket, socket connection
+
 ## Development and deployment
 
 **RoomOS validation target**: `parent-2-prog2`
