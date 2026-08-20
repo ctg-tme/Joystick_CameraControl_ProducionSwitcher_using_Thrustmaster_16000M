@@ -362,6 +362,11 @@ describe('configurator workflow presentation', () => {
     expect(styles).toContain('bottom: var(--site-footer-height);');
     expect(styles).toContain('padding-bottom: var(--site-footer-height);');
     expect(styles).toContain('border-top: 1px solid var(--base-border-default);');
+    const mobileFooter = styles.slice(
+      styles.indexOf('@media (max-width: 600px)'),
+      styles.indexOf('@media (max-width: 720px)'),
+    );
+    expect(mobileFooter).toMatch(/\.site-footer a \{\s*justify-self: end;/);
   });
 
   it('uses complete Magnetic dark tokens and inverse text tokens on the dark hero', async () => {

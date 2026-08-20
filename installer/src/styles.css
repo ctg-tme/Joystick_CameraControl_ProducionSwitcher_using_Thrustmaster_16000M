@@ -2632,9 +2632,12 @@ td code {
     padding: 8px 20px;
   }
 
-  .site-footer a,
   .site-footer p {
     justify-self: start;
+  }
+
+  .site-footer a {
+    justify-self: end;
   }
 
   .device-connection-pill {

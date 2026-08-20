@@ -34,12 +34,10 @@ afterEach(() => {
 });
 
 describe('device installation', () => {
-  it('reads the Device Broadcast name while verifying the connected device', async () => {
-    const config = vi.fn(async (path: string) => {
-      expect(path).toBe('SystemUnit BroadcastName');
-      return { Value: ' Boardroom East ' };
-    });
+  it('reads the effective Device Broadcast name from status while verifying the connected device', async () => {
+    const config = vi.fn(async () => '');
     const status = vi.fn(async (path: string) => ({
+      'SystemUnit BroadcastName': { Value: ' Boardroom East ' },
       'SystemUnit Hardware Module SerialNumber': 'SERIAL-1',
       'SystemUnit Software Version': '26.3.1',
       'SystemUnit ProductPlatform': 'Codec Pro G2',
@@ -54,7 +52,8 @@ describe('device installation', () => {
       serialMatches: true,
       activeCalls: 0,
     });
-    expect(config).toHaveBeenCalledOnce();
+    expect(status).toHaveBeenCalledWith('SystemUnit BroadcastName');
+    expect(config).not.toHaveBeenCalled();
   });
 
   it('discovers camera connectors and joins camera status by CameraId', () => {

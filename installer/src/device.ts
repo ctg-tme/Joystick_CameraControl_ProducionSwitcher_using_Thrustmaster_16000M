@@ -295,7 +295,7 @@ export async function verifyConnectedDevice(
 ): Promise<VerifiedDevice> {
   const [broadcastName, serial, version, product, calls] = await Promise.all([
     withOperationDeadline(
-      xapi.config.get('SystemUnit BroadcastName'),
+      xapi.status.get('SystemUnit BroadcastName'),
       'Reading the device broadcast name',
     ),
     withOperationDeadline(
