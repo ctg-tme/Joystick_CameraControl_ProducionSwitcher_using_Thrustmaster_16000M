@@ -9,6 +9,7 @@ export interface DeviceCredentials {
 }
 
 export interface VerifiedDevice {
+  broadcastName: string;
   productPlatform: string;
   roomOsVersion: string;
   serialMatches: boolean;
@@ -288,11 +289,15 @@ async function discoverCameraSources(xapi: DeviceXapi): Promise<DiscoveredCamera
   });
 }
 
-async function verifyConnectedDevice(
+export async function verifyConnectedDevice(
   xapi: DeviceXapi,
   expectedSerial: string,
 ): Promise<VerifiedDevice> {
-  const [serial, version, product, calls] = await Promise.all([
+  const [broadcastName, serial, version, product, calls] = await Promise.all([
+    withOperationDeadline(
+      xapi.config.get('SystemUnit BroadcastName'),
+      'Reading the device broadcast name',
+    ),
     withOperationDeadline(
       xapi.status.get('SystemUnit Hardware Module SerialNumber'),
       'Reading the device serial number',
@@ -312,6 +317,7 @@ async function verifyConnectedDevice(
   ]);
   const activeCalls = Number(scalarString(calls));
   return {
+    broadcastName: scalarString(broadcastName).trim(),
     productPlatform: scalarString(product),
     roomOsVersion: scalarString(version),
     serialMatches: normalizeSerial(scalarString(serial)) === normalizeSerial(expectedSerial),

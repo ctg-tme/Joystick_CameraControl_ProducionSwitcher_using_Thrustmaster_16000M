@@ -198,6 +198,7 @@ describe('direct installation connection flow', () => {
         connected: true,
         host: 'room.example.test',
         verifiedDevice: {
+          broadcastName: 'Boardroom East',
           productPlatform: 'Room Kit Pro',
           roomOsVersion: 'RoomOS 26',
           serialMatches: true,
@@ -244,6 +245,7 @@ describe('direct installation connection flow', () => {
           connected: true,
           host: 'room.example.test',
           verifiedDevice: {
+            broadcastName: 'Boardroom East',
             productPlatform: 'Room Kit Pro',
             roomOsVersion: 'RoomOS 26',
             serialMatches: true,
@@ -375,6 +377,37 @@ describe('direct installation connection flow', () => {
     expect(testableApp.renderReviewActions()).toContain('Reconnect before continuing.');
   });
 
+  it('shows the Device Broadcast name and RoomOS version in the centered footer pill only while connected', () => {
+    let state: DeviceInstallationState = {
+      connected: true,
+      verifiedDevice: {
+        broadcastName: 'Boardroom <East>',
+        productPlatform: 'Codec Pro G2',
+        roomOsVersion: '26.3.1',
+        serialMatches: true,
+        activeCalls: 0,
+      },
+    };
+    const session: DeviceInstallationSession = {
+      snapshot: () => state,
+      connect: vi.fn(),
+      fetchInstalledMacro: vi.fn(),
+      discoverCameraSources: vi.fn(async () => []),
+      recheck: vi.fn(),
+      install: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const app = new ConfiguratorApp(testRoot(), session, testWorkflow());
+    const testableApp = app as unknown as { renderDeviceConnectionPill(): string };
+
+    expect(testableApp.renderDeviceConnectionPill()).toContain('Connected');
+    expect(testableApp.renderDeviceConnectionPill()).toContain('Boardroom &lt;East&gt;');
+    expect(testableApp.renderDeviceConnectionPill()).toContain('RoomOS 26.3.1');
+
+    state = { connected: false };
+    expect(testableApp.renderDeviceConnectionPill()).toBe('');
+  });
+
   it('connects and discovers cameras without fetching or installing the macro', async () => {
     let state: DeviceInstallationState = { connected: false };
     const fetchInstalledMacro = vi.fn();
@@ -394,6 +427,7 @@ describe('direct installation connection flow', () => {
           connected: true,
           host: 'room.example.test',
           verifiedDevice: {
+            broadcastName: 'Boardroom East',
             productPlatform: 'Room Kit Pro',
             roomOsVersion: 'RoomOS 26',
             serialMatches: true,
@@ -482,6 +516,7 @@ describe('direct installation connection flow', () => {
         connected: true,
         host: 'room.example.test',
         verifiedDevice: {
+          broadcastName: 'Boardroom East',
           productPlatform: 'Codec Pro G2',
           roomOsVersion: 'RoomOS 26',
           serialMatches: true,

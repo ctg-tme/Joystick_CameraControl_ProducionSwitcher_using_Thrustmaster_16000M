@@ -2419,10 +2419,10 @@ td code {
   right: 0;
   bottom: 0;
   left: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   min-height: var(--site-footer-height);
   align-items: center;
-  justify-content: space-between;
   gap: 12px 36px;
   margin: 0;
   padding: 10px var(--page-gutter);
@@ -2434,6 +2434,8 @@ td code {
 }
 
 .site-footer p {
+  min-width: 0;
+  justify-self: start;
   margin: 0;
 }
 
@@ -2442,6 +2444,7 @@ td code {
 }
 
 .site-footer a {
+  justify-self: end;
   border-radius: 4px;
   color: var(--interact-text-default);
   font-weight: 650;
@@ -2449,6 +2452,50 @@ td code {
 
 .site-footer a:hover {
   color: var(--interact-text-hover);
+}
+
+.device-connection-pill {
+  display: flex;
+  min-width: 0;
+  max-width: min(42vw, 520px);
+  min-height: 26px;
+  align-items: center;
+  gap: 6px;
+  justify-self: center;
+  padding: 4px 8px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--positive-bg-medium-default);
+  color: var(--base-text-default);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.device-connection-pill-state {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.device-connection-pill-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--positive-icon-strong-default);
+}
+
+.device-connection-pill-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.device-connection-pill-version {
+  flex: 0 0 auto;
 }
 
 @media (max-width: 1199px) {
@@ -2567,17 +2614,32 @@ td code {
     --site-footer-height: 86px;
   }
 
+  .site-shell.device-connected {
+    --site-footer-height: 112px;
+  }
+
   .wordmark-copy strong {
     display: none;
   }
 
   .site-footer {
-    align-items: flex-start;
-    flex-direction: column;
-    justify-content: center;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: center;
+    align-items: center;
+    justify-items: start;
     gap: 4px;
     margin-inline: 0;
     padding: 8px 20px;
+  }
+
+  .site-footer a,
+  .site-footer p {
+    justify-self: start;
+  }
+
+  .device-connection-pill {
+    max-width: 100%;
+    justify-self: center;
   }
 
   .configured-cameras-pane .camera-grid {

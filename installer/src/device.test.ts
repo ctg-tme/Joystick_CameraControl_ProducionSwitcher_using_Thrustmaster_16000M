@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createDeviceInstallationSession,
   discoverCameraSourcesFromResponses,
+  verifyConnectedDevice,
   type DeviceXapi,
   type VerifiedDevice,
 } from './device';
 
 const verifiedDevice: VerifiedDevice = {
+  broadcastName: 'Boardroom East',
   productPlatform: 'Room Kit Pro',
   roomOsVersion: 'RoomOS 26.3',
   serialMatches: true,
@@ -32,6 +34,29 @@ afterEach(() => {
 });
 
 describe('device installation', () => {
+  it('reads the Device Broadcast name while verifying the connected device', async () => {
+    const config = vi.fn(async (path: string) => {
+      expect(path).toBe('SystemUnit BroadcastName');
+      return { Value: ' Boardroom East ' };
+    });
+    const status = vi.fn(async (path: string) => ({
+      'SystemUnit Hardware Module SerialNumber': 'SERIAL-1',
+      'SystemUnit Software Version': '26.3.1',
+      'SystemUnit ProductPlatform': 'Codec Pro G2',
+      'SystemUnit State NumberOfActiveCalls': '0',
+    })[path]);
+    const xapi = { config: { get: config }, status: { get: status } } as unknown as DeviceXapi;
+
+    await expect(verifyConnectedDevice(xapi, 'serial1')).resolves.toEqual({
+      broadcastName: 'Boardroom East',
+      productPlatform: 'Codec Pro G2',
+      roomOsVersion: '26.3.1',
+      serialMatches: true,
+      activeCalls: 0,
+    });
+    expect(config).toHaveBeenCalledOnce();
+  });
+
   it('discovers camera connectors and joins camera status by CameraId', () => {
     const result = discoverCameraSourcesFromResponses(
       [{

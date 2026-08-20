@@ -1193,10 +1193,26 @@ export class ConfiguratorApp {
       </dialog>`;
   }
 
+  private renderDeviceConnectionPill(): string {
+    const session = this.deviceSession.snapshot();
+    const verifiedDevice = session.verifiedDevice;
+    if (!session.connected || !verifiedDevice?.serialMatches) return '';
+
+    const broadcastName = verifiedDevice.broadcastName.trim();
+    const roomOsVersion = displayRoomOsVersion(verifiedDevice.roomOsVersion);
+    return `
+      <span class="device-connection-pill" title="${escapeHtml(broadcastName || 'Device broadcast name not set')}">
+        <span class="device-connection-pill-state"><span class="device-connection-pill-dot" aria-hidden="true"></span>Connected</span>
+        ${broadcastName ? `<span aria-hidden="true">·</span><span class="device-connection-pill-name">${escapeHtml(broadcastName)}</span>` : ''}
+        <span aria-hidden="true">·</span><span class="device-connection-pill-version">${escapeHtml(roomOsVersion)}</span>
+      </span>`;
+  }
+
   private render(): void {
     const currentYear = new Date().getFullYear();
+    const deviceConnectionPill = this.renderDeviceConnectionPill();
     this.root.innerHTML = `
-      <div class="site-shell">
+      <div class="site-shell${deviceConnectionPill ? ' device-connected' : ''}">
         <nav class="topbar no-print">
           <button type="button" class="wordmark" data-workflow-step="1">
             <span class="wordmark-mark" aria-hidden="true"><img src="/icons/joystick-camera-control.svg" alt=""></span>
@@ -1220,8 +1236,9 @@ export class ConfiguratorApp {
             ${this.renderWorkflowActions()}
           </div>
         </main>
-        <footer class="site-footer no-print">
+        <footer class="site-footer no-print${deviceConnectionPill ? ' device-connected' : ''}">
           <p>&copy; ${currentYear} Cisco Systems, Inc. <span aria-hidden="true">||</span> Created by the Collaboration TME team</p>
+          ${deviceConnectionPill}
           <a href="${CISCO_SAMPLE_CODE_LICENSE_URL}" target="_blank" rel="noreferrer" aria-label="Cisco Sample Code License (opens in a new tab)">Cisco Sample Code License</a>
         </footer>
         ${this.renderAboutModal()}
