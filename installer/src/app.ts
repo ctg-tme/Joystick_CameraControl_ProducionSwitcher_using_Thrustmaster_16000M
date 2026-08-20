@@ -534,11 +534,6 @@ export class ConfiguratorApp {
           <span class="eyebrow">Cisco RoomOS macro solution</span>
           <h1>Joystick Camera Control Production Switcher</h1>
           <p class="hero-summary">Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a simple Main/Preview production workflow without a separate control computer.</p>
-          <ul class="solution-highlights" aria-label="Solution highlights">
-            <li><strong>Direct camera control</strong><span>Pan, tilt, and zoom supported Cisco cameras from the joystick.</span></li>
-            <li><strong>Main and Preview</strong><span>Take a source live or stage it locally before swapping it to Main.</span></li>
-            <li><strong>One to four cameras</strong><span>Name each source and assign the T.16000M buttons for the room.</span></li>
-          </ul>
           <p class="hero-read-more"><a id="project-readme-link" href="${PROJECT_README_URL}" target="_blank" rel="noreferrer">Read the project README <span aria-hidden="true">↗</span></a> for the complete feature set, requirements, operator workflow, and manual setup.</p>
           <section class="installer-introduction no-print" aria-labelledby="choose-start-title">
             <div class="installer-introduction-heading">
@@ -572,6 +567,11 @@ export class ConfiguratorApp {
             <img src="./assets/infocomm-2026-joystick-demo.png" alt="An operator controlling a camera with the Thrustmaster T.16000M at InfoComm 2026">
             <figcaption>The joystick camera-control experience demonstrated at InfoComm 2026.</figcaption>
           </figure>
+          <ul class="solution-highlights" aria-label="Solution highlights">
+            <li><strong>Direct camera control</strong><span>Pan, tilt, and zoom supported Cisco cameras from the joystick.</span></li>
+            <li><strong>Main and Preview</strong><span>Take a source live or stage it locally before swapping it to Main.</span></li>
+            <li><strong>One to four cameras</strong><span>Name each source and assign the T.16000M buttons for the room.</span></li>
+          </ul>
           <aside class="purpose-checklist" aria-labelledby="purpose-checklist-title">
             <span class="eyebrow">Purpose-built solution</span>
             <h2 id="purpose-checklist-title">What to know before you begin</h2>

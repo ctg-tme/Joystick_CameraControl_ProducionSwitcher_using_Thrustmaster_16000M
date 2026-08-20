@@ -86,6 +86,23 @@ describe('configurator workflow presentation', () => {
     expect(styles).toContain('.live-demo img');
   });
 
+  it('places the solution highlight cards below the hero image', async () => {
+    const [source, styles] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+    ]);
+    const sidebar = source.indexOf('<div class="hero-sidebar">');
+    const heroImage = source.indexOf('<figure class="live-demo">', sidebar);
+    const highlights = source.indexOf('<ul class="solution-highlights"', sidebar);
+    const checklist = source.indexOf('<aside class="purpose-checklist"', sidebar);
+
+    expect(sidebar).toBeGreaterThan(-1);
+    expect(heroImage).toBeGreaterThan(sidebar);
+    expect(highlights).toBeGreaterThan(heroImage);
+    expect(checklist).toBeGreaterThan(highlights);
+    expect(styles).toMatch(/\.solution-highlights \{[^}]*margin: 0;/s);
+  });
+
   it('opens device connection as a modal without navigating the workflow', async () => {
     const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
 
