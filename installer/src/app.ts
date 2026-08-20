@@ -1228,12 +1228,20 @@ export class ConfiguratorApp {
     });
 
     this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-camera-id]').forEach((input) => {
+      const field = input.dataset.cameraField as 'Name' | 'ConnectorId' | 'ControlId';
+      if (field === 'Name' || field === 'ConnectorId') {
+        input.addEventListener('input', () => {
+          const camera = this.cameraById(input.dataset.cameraId);
+          if (camera && field === 'Name') camera.Name = input.value;
+          if (camera && field === 'ConnectorId') camera.ConnectorId = input.value;
+          this.cameraMessage = '';
+          this.syncCameraMetadata();
+        });
+        return;
+      }
       input.addEventListener('change', () => {
         const camera = this.cameraById(input.dataset.cameraId);
-        const field = input.dataset.cameraField as 'Name' | 'ConnectorId' | 'ControlId';
         if (camera && field === 'ControlId') camera.ControlId = input.value || null;
-        if (camera && field === 'Name') camera.Name = input.value;
-        if (camera && field === 'ConnectorId') camera.ConnectorId = input.value;
         this.cameraMessage = '';
         this.render();
       });
@@ -1383,6 +1391,32 @@ export class ConfiguratorApp {
     if (preview && !validateConfiguratorState(this.state).length) {
       preview.textContent = generateConfigSource(this.state);
     }
+  }
+
+  private syncCameraMetadata(): void {
+    const cameraActions = cameraButtonActions(this.state.cameras);
+    this.root.querySelectorAll<HTMLElement>('.camera-card').forEach((card) => {
+      const nameInput = card.querySelector<HTMLInputElement>('input[data-camera-field="Name"]');
+      const camera = this.cameraById(nameInput?.dataset.cameraId);
+      if (!camera) return;
+      const name = camera.Name || 'Unnamed camera';
+      const heading = card.querySelector<HTMLElement>('.camera-card-header strong');
+      const action = card.querySelector<HTMLElement>('.camera-card-header code');
+      const remove = card.querySelector<HTMLButtonElement>('[data-remove-camera]');
+      if (heading) heading.textContent = camera.Name || `Camera ${this.state.cameras.indexOf(camera) + 1}`;
+      if (action) action.textContent = cameraActions.get(camera.id) ?? '';
+      if (remove) remove.setAttribute('aria-label', `Remove ${name}`);
+    });
+    const defaultCamera = this.byId('default-camera') as HTMLSelectElement | null;
+    for (const option of defaultCamera?.options ?? []) {
+      const camera = this.cameraById(option.value);
+      if (camera) option.textContent = camera.Name || 'Unnamed camera';
+    }
+    const next = this.root.querySelector<HTMLButtonElement>('.workflow-actions [data-workflow-step="3"]');
+    if (next) next.disabled = validateConfiguratorState(this.state).length > 0;
+    this.root.querySelector('.camera-message')?.remove();
+    const printSheet = this.root.querySelector<HTMLElement>('.print-sheet');
+    if (printSheet) printSheet.outerHTML = renderConfiguredPrintSheet(this.state);
   }
 
   private async selectReleaseTarget(tag: string): Promise<void> {
