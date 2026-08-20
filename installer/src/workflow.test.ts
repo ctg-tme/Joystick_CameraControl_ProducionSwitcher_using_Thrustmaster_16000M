@@ -123,6 +123,32 @@ describe('configurator workflow presentation', () => {
     expect(source).not.toContain('class="config-recovery"');
   });
 
+  it('groups Macro Settings by the generated config hierarchy', async () => {
+    const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
+    const settingsSource = source.slice(
+      source.indexOf('private renderSettings()'),
+      source.indexOf('private renderCameras()'),
+    );
+
+    for (const path of [
+      'config.documentation',
+      'config.previewDisplay',
+      'config.userInterface',
+      'config.joystick',
+      'config.joystick.Camera',
+    ]) {
+      expect(settingsSource).toContain(`<code class="settings-path">${path}</code>`);
+    }
+
+    expect(settingsSource).toContain('class="settings-group settings-group-joystick"');
+    expect(settingsSource).toContain('class="settings-subgroup"');
+    expect(settingsSource.indexOf('config.joystick.Camera')).toBeGreaterThan(
+      settingsSource.indexOf('class="settings-group settings-group-joystick"'),
+    );
+    expect(source).toContain("label: 'Ramp divisor'");
+    expect(source).not.toContain("label: 'Precision divisor'");
+  });
+
   it('uses bounded dropdowns for all numeric macro settings', async () => {
     const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
 
@@ -168,11 +194,12 @@ describe('configurator workflow presentation', () => {
     expect(source).toContain('The password and expected serial number are never cached.');
   });
 
-  it('keeps button assignment fields in left-to-right columns until the compact breakpoint', async () => {
+  it('keeps grouped settings and button assignment fields in columns until the compact breakpoint', async () => {
     const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
 
     expect(styles).toContain('grid-template-columns: minmax(300px, 480px) minmax(420px, 1fr);');
-    expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));');
+    expect(styles).toContain('grid-template-columns: repeat(12, minmax(0, 1fr));');
+    expect(styles).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
     expect(styles).toContain('grid-template-columns: 34px minmax(72px, .6fr) minmax(128px, 1.1fr) minmax(112px, .9fr);');
     expect(styles).not.toContain('.button-assignment-page .map-layout');
     expect(styles).toContain('@media (max-width: 1199px)');

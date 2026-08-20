@@ -11,8 +11,11 @@ and Review and Installation. Introduction offers a fresh configuration, local
 macro import, or a verified device fetch. It also selects the base macro Release;
 the latest compatible published stable Release is selected on every fresh page
 load, and that Release's manifest determines the exact dependency Release. The
-selection lasts only for the current in-memory workflow. Macro Settings includes configured and discovered camera sources,
-independent PAN/TILT and zoom ramp speeds, and their shared Precision Mode divisor.
+selection lasts only for the current in-memory workflow. Macro Settings mirrors the
+macro's `documentation`, `previewDisplay`, `userInterface`, `joystick`, nested
+`joystick.Camera`, and `cameras` groups. It includes configured and discovered
+camera sources, independent PAN/TILT and zoom ramp speeds, and their shared Ramp
+divisor used by Precision Mode.
 The Button Assignments page reads left to right while its complete action key
 opens in a modal. The workflow rail and browser history allow any visited page to
 be revisited without losing the in-session configuration. Refreshing warns the

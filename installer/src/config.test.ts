@@ -129,7 +129,7 @@ describe('joystick configuration generation', () => {
     ]));
   });
 
-  it('limits Preview output and Precision divisor to the WebUI options', () => {
+  it('limits Preview output and Ramp divisor to the WebUI options', () => {
     const state = createDefaultState();
     state.previewOutput = 3;
     state.slowModeDivisor = 4;
@@ -140,7 +140,7 @@ describe('joystick configuration generation', () => {
     state.slowModeDivisor = 5;
     expect(validateConfiguratorState(state)).toEqual(expect.arrayContaining([
       'Preview output must be between 1 and 3.',
-      'Precision divisor must be between 1 and 4.',
+      'Ramp divisor must be between 1 and 4.',
     ]));
   });
 

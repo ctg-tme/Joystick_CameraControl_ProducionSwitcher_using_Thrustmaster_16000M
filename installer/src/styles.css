@@ -1021,14 +1021,80 @@ code {
   color: var(--muted);
 }
 
-.settings-grid {
+.settings-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 14px;
 }
 
-.project-field {
-  grid-column: auto;
+.settings-group {
+  display: grid;
+  grid-column: span 4;
+  align-content: start;
+  gap: 18px;
+  padding: 18px;
+  border: 2px solid var(--control-border-weak-default);
+  border-radius: 8px;
+  background: var(--control-bg-weak-default);
+}
+
+.settings-group-documentation {
+  grid-column: span 4;
+}
+
+.settings-group-preview {
+  grid-column: span 4;
+}
+
+.settings-group-user-interface {
+  grid-column: span 4;
+}
+
+.settings-group-joystick {
+  grid-column: 1 / -1;
+}
+
+.settings-group-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-group-heading h2 {
+  font-family: "Sharp Sans", Inter, ui-sans-serif, sans-serif;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.settings-path {
+  width: fit-content;
+  color: var(--base-text-medium-default);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.settings-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+
+.settings-field-grid-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.settings-subgroup {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--base-border-default);
+  border-radius: 6px;
+  background: var(--base-bg-default);
+}
+
+.settings-subgroup-heading h3 {
+  font-family: "Sharp Sans", Inter, ui-sans-serif, sans-serif;
+  font-size: 16px;
+  line-height: 22px;
 }
 
 .field {
@@ -1448,12 +1514,8 @@ code {
 }
 
 .camera-actions {
-  justify-content: space-between;
+  justify-content: flex-start;
   margin-top: 16px;
-}
-
-.default-camera {
-  min-width: 250px;
 }
 
 .map-layout {
@@ -2547,13 +2609,15 @@ td code {
     gap: 42px;
   }
 
-  .settings-grid,
+  .settings-field-grid-three,
   .workflow-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .project-field {
-    grid-column: span 2;
+  .settings-group-documentation,
+  .settings-group-preview,
+  .settings-group-user-interface {
+    grid-column: span 6;
   }
 
   .config-recovery {
@@ -2658,7 +2722,9 @@ td code {
     padding: 58px 20px 68px;
   }
 
-  .settings-grid,
+  .settings-groups,
+  .settings-field-grid,
+  .settings-field-grid-three,
   .camera-grid,
   .manifest-grid,
   .review-action-grid,
@@ -2684,7 +2750,11 @@ td code {
     width: 100%;
   }
 
-  .project-field {
+  .settings-group,
+  .settings-group-documentation,
+  .settings-group-preview,
+  .settings-group-user-interface,
+  .settings-group-joystick {
     grid-column: auto;
   }
 

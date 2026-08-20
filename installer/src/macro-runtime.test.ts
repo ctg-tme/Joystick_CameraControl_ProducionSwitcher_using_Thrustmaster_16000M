@@ -237,7 +237,7 @@ describe('joystick runtime behavior', () => {
     expect(source).not.toContain('xapi.Command.UserInterface.Message.TextLine');
   });
 
-  it('uses independent pan/tilt and zoom ramp speeds with the shared Precision Mode divisor', async () => {
+  it('uses independent pan/tilt and zoom ramp speeds with the shared Ramp divisor', async () => {
     const source = await readFile(macroUrl, 'utf8');
 
     expect(source).toContain('PanTiltRampSpeed: 12');

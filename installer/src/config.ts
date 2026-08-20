@@ -85,7 +85,7 @@ export function validateConfiguratorState(state: ConfiguratorState): string[] {
     errors.push('Zoom ramp speed must be between 1 and 15.');
   }
   if (!Number.isInteger(state.slowModeDivisor) || state.slowModeDivisor < 1 || state.slowModeDivisor > 4) {
-    errors.push('Precision divisor must be between 1 and 4.');
+    errors.push('Ramp divisor must be between 1 and 4.');
   }
 
   const cameraActions = cameraButtonActions(state.cameras);

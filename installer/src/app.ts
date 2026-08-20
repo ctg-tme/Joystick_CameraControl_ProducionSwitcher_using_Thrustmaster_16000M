@@ -100,7 +100,7 @@ const CONFIGURATION_DEFINITIONS = {
     description: 'The base speed for camera zoom movement. Not all Cisco cameras respect this setting.',
   },
   slowModeDivisor: {
-    label: 'Precision divisor',
+    label: 'Ramp divisor',
     description: 'Divides the PAN/TILT and ZOOM speeds by this value while the Precision mode button is held.',
   },
   cameraName: {
@@ -670,38 +670,83 @@ export class ConfiguratorApp {
           <div><span class="section-kicker">02 · Settings</span><h1>Macro settings</h1></div>
           <p>These values drive the macro and the printable guide.</p>
         </div>
-        <div class="settings-grid">
-          <label class="field project-field">${this.renderConfigurationLabel('projectName')}<input data-setting="projectName" value="${escapeHtml(this.state.projectName)}"></label>
-          <label class="field">${this.renderConfigurationLabel('roomName')}<input data-setting="roomName" value="${escapeHtml(this.state.roomName)}"></label>
-          <label class="field">${this.renderConfigurationLabel('handedness')}
-            <select data-setting="handedness">
-              <option value="right" ${this.state.handedness === 'right' ? 'selected' : ''}>Right-handed</option>
-              <option value="left" ${this.state.handedness === 'left' ? 'selected' : ''}>Left-handed</option>
-            </select>
-          </label>
-          <label class="field">${this.renderConfigurationLabel('setDefaultCamera')}
-            <select data-setting="setDefaultCamera">
-              <option value="true" ${this.state.setDefaultCamera ? 'selected' : ''}>Enabled</option>
-              <option value="false" ${!this.state.setDefaultCamera ? 'selected' : ''}>Disabled</option>
-            </select>
-            <small>Disabled leaves the current Main source unchanged when Joystick Controls is enabled.</small>
-          </label>
-          <label class="field">${this.renderConfigurationLabel('panelLocation')}
-            <select data-setting="panelLocation">
-              ${PANEL_LOCATIONS.map((location) => `<option value="${location}" ${this.state.panelLocation === location ? 'selected' : ''}>${location}</option>`).join('')}
-            </select>
-          </label>
-          <label class="field">${this.renderConfigurationLabel('previewMode')}
-            <select data-setting="previewMode">
-              <option value="On" ${this.state.previewMode === 'On' ? 'selected' : ''}>On</option>
-              <option value="Off" ${this.state.previewMode === 'Off' ? 'selected' : ''}>Off</option>
-            </select>
-            <small>Off prevents all Preview controls, switching, and display commands.</small>
-          </label>
-          <label class="field">${this.renderConfigurationLabel('previewOutput')}<select data-setting="previewOutput">${integerOptions(1, 3, this.state.previewOutput)}</select></label>
-          <label class="field">${this.renderConfigurationLabel('panTiltRampSpeed')}<select data-setting="panTiltRampSpeed">${integerOptions(1, 24, this.state.panTiltRampSpeed)}</select></label>
-          <label class="field">${this.renderConfigurationLabel('zoomRampSpeed')}<select data-setting="zoomRampSpeed">${integerOptions(1, 15, this.state.zoomRampSpeed)}</select></label>
-          <label class="field">${this.renderConfigurationLabel('slowModeDivisor')}<select data-setting="slowModeDivisor">${integerOptions(1, 4, this.state.slowModeDivisor)}</select></label>
+        <div class="settings-groups">
+          <section class="settings-group settings-group-documentation" aria-labelledby="settings-documentation-title">
+            <header class="settings-group-heading">
+              <code class="settings-path">config.documentation</code>
+              <h2 id="settings-documentation-title">Documentation</h2>
+            </header>
+            <div class="settings-field-grid">
+              <label class="field">${this.renderConfigurationLabel('projectName')}<input data-setting="projectName" value="${escapeHtml(this.state.projectName)}"></label>
+              <label class="field">${this.renderConfigurationLabel('roomName')}<input data-setting="roomName" value="${escapeHtml(this.state.roomName)}"></label>
+            </div>
+          </section>
+          <section class="settings-group settings-group-preview" aria-labelledby="settings-preview-title">
+            <header class="settings-group-heading">
+              <code class="settings-path">config.previewDisplay</code>
+              <h2 id="settings-preview-title">Preview display</h2>
+            </header>
+            <div class="settings-field-grid">
+              <label class="field">${this.renderConfigurationLabel('previewMode')}
+                <select data-setting="previewMode">
+                  <option value="On" ${this.state.previewMode === 'On' ? 'selected' : ''}>On</option>
+                  <option value="Off" ${this.state.previewMode === 'Off' ? 'selected' : ''}>Off</option>
+                </select>
+                <small>Off prevents all Preview controls, switching, and display commands.</small>
+              </label>
+              <label class="field">${this.renderConfigurationLabel('previewOutput')}<select data-setting="previewOutput">${integerOptions(1, 3, this.state.previewOutput)}</select></label>
+            </div>
+          </section>
+          <section class="settings-group settings-group-user-interface" aria-labelledby="settings-user-interface-title">
+            <header class="settings-group-heading">
+              <code class="settings-path">config.userInterface</code>
+              <h2 id="settings-user-interface-title">User interface</h2>
+            </header>
+            <div class="settings-field-grid">
+              <label class="field">${this.renderConfigurationLabel('panelLocation')}
+                <select data-setting="panelLocation">
+                  ${PANEL_LOCATIONS.map((location) => `<option value="${location}" ${this.state.panelLocation === location ? 'selected' : ''}>${location}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+          </section>
+          <section class="settings-group settings-group-joystick" aria-labelledby="settings-joystick-title">
+            <header class="settings-group-heading">
+              <code class="settings-path">config.joystick</code>
+              <h2 id="settings-joystick-title">Joystick</h2>
+            </header>
+            <div class="settings-field-grid settings-field-grid-three">
+              <label class="field">${this.renderConfigurationLabel('handedness')}
+                <select data-setting="handedness">
+                  <option value="right" ${this.state.handedness === 'right' ? 'selected' : ''}>Right-handed</option>
+                  <option value="left" ${this.state.handedness === 'left' ? 'selected' : ''}>Left-handed</option>
+                </select>
+              </label>
+              <label class="field">${this.renderConfigurationLabel('setDefaultCamera')}
+                <select data-setting="setDefaultCamera">
+                  <option value="true" ${this.state.setDefaultCamera ? 'selected' : ''}>Enabled</option>
+                  <option value="false" ${!this.state.setDefaultCamera ? 'selected' : ''}>Disabled</option>
+                </select>
+                <small>Disabled leaves the current Main source unchanged when Joystick Controls is enabled.</small>
+              </label>
+              <label class="field">${this.renderConfigurationLabel('defaultCamera')}
+                <select id="default-camera">
+                  ${this.state.cameras.map((camera) => `<option value="${escapeHtml(camera.id)}" ${camera.id === this.state.defaultCameraId ? 'selected' : ''}>${escapeHtml(camera.Name || 'Unnamed camera')}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+            <section class="settings-subgroup" aria-labelledby="settings-camera-movement-title">
+              <header class="settings-group-heading settings-subgroup-heading">
+                <code class="settings-path">config.joystick.Camera</code>
+                <h3 id="settings-camera-movement-title">Camera movement</h3>
+              </header>
+              <div class="settings-field-grid settings-field-grid-three">
+                <label class="field">${this.renderConfigurationLabel('panTiltRampSpeed')}<select data-setting="panTiltRampSpeed">${integerOptions(1, 24, this.state.panTiltRampSpeed)}</select></label>
+                <label class="field">${this.renderConfigurationLabel('zoomRampSpeed')}<select data-setting="zoomRampSpeed">${integerOptions(1, 15, this.state.zoomRampSpeed)}</select></label>
+                <label class="field">${this.renderConfigurationLabel('slowModeDivisor')}<select data-setting="slowModeDivisor">${integerOptions(1, 4, this.state.slowModeDivisor)}</select></label>
+              </div>
+            </section>
+          </section>
         </div>
       </section>
       ${this.renderCameras()}
@@ -713,7 +758,7 @@ export class ConfiguratorApp {
     return `
       <section class="panel section no-print" id="cameras">
         <div class="section-heading">
-          <div><span class="section-kicker">Camera sources</span><h2>Configure camera sources</h2></div>
+          <div><code class="settings-path">config.cameras</code><h2>Configure camera sources</h2></div>
           <p>Camera ButtonAction names are generated automatically and become choices in every button dropdown.</p>
         </div>
         <div class="camera-source-layout">
@@ -738,11 +783,6 @@ export class ConfiguratorApp {
             </div>
             <div class="camera-actions">
               <button class="button secondary" id="add-camera" type="button" ${this.state.cameras.length >= 4 ? 'disabled' : ''}>Add camera</button>
-              <label class="field default-camera">${this.renderConfigurationLabel('defaultCamera')}
-                <select id="default-camera">
-                  ${this.state.cameras.map((camera) => `<option value="${escapeHtml(camera.id)}" ${camera.id === this.state.defaultCameraId ? 'selected' : ''}>${escapeHtml(camera.Name || 'Unnamed camera')}</option>`).join('')}
-                </select>
-              </label>
             </div>
             ${this.cameraMessage ? `<div class="callout progress camera-message" role="status"><strong>Camera configuration updated</strong><p>${escapeHtml(this.cameraMessage)}</p></div>` : ''}
           </div>
