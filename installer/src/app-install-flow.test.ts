@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfiguratorApp } from './app';
+import { generateConfiguredMacro } from './config';
 import type {
   DeviceCredentials,
   DeviceInstallationSession,
@@ -57,13 +58,17 @@ function testRoot(): HTMLElement {
   } as unknown as HTMLElement;
 }
 
-function testWorkflow(): WorkflowNavigation {
+function testWorkflow(currentStep: WorkflowNavigation['currentStep'] = 4): WorkflowNavigation {
   return {
-    currentStep: 4,
+    currentStep,
     initialize: vi.fn(),
     navigate: vi.fn(() => false),
     markProgress: vi.fn(),
   };
+}
+
+function unknownReleaseMacro(): string {
+  return generateConfiguredMacro(installerSources.macroTemplate, createDefaultState());
 }
 
 describe('direct installation connection flow', () => {
@@ -79,6 +84,79 @@ describe('direct installation connection flow', () => {
       })),
       setTimeout,
     });
+  });
+
+  it('keeps an imported macro on Introduction so its source Release status is visible', async () => {
+    const workflow = testWorkflow(1);
+    const session: DeviceInstallationSession = {
+      snapshot: () => ({ connected: false }),
+      connect: vi.fn(),
+      fetchInstalledMacro: vi.fn(),
+      recheck: vi.fn(),
+      install: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const app = new ConfiguratorApp(testRoot(), session, workflow);
+    const testableApp = app as unknown as {
+      catalog: ReleaseCatalog;
+      releaseResolution: MacroReleaseResolution;
+      importMacroFile(input: HTMLInputElement): Promise<void>;
+    };
+    testableApp.catalog = catalog;
+
+    await testableApp.importMacroFile({
+      files: [{
+        name: 'unknown-release.js',
+        size: 512,
+        text: vi.fn(async () => unknownReleaseMacro()),
+      }],
+    } as unknown as HTMLInputElement);
+
+    expect(testableApp.releaseResolution).toMatchObject({
+      origin: 'upload',
+      recognition: 'unknown',
+    });
+    expect(workflow.navigate).not.toHaveBeenCalled();
+    expect(workflow.currentStep).toBe(1);
+  });
+
+  it('keeps a fetched macro on Introduction so its source Release status is visible', async () => {
+    const workflow = testWorkflow(1);
+    const fetchInstalledMacro = vi.fn(async () => unknownReleaseMacro());
+    const session: DeviceInstallationSession = {
+      snapshot: () => ({
+        connected: true,
+        host: 'room.example.test',
+        verifiedDevice: {
+          productPlatform: 'Room Kit Pro',
+          roomOsVersion: 'RoomOS 26',
+          serialMatches: true,
+          activeCalls: 0,
+        },
+      }),
+      connect: vi.fn(),
+      fetchInstalledMacro,
+      recheck: vi.fn(),
+      install: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const app = new ConfiguratorApp(testRoot(), session, workflow);
+    const testableApp = app as unknown as {
+      catalog: ReleaseCatalog;
+      releaseResolution: MacroReleaseResolution;
+      beginDeviceMacroFetch(): Promise<void>;
+    };
+    testableApp.catalog = catalog;
+
+    await testableApp.beginDeviceMacroFetch();
+
+    expect(fetchInstalledMacro).toHaveBeenCalledOnce();
+    expect(testableApp.releaseResolution).toMatchObject({
+      origin: 'device',
+      recognition: 'unknown',
+    });
+    expect(workflow.navigate).not.toHaveBeenCalled();
+    expect(workflow.currentStep).toBe(1);
   });
 
   it('continues the requested installation immediately after connecting and verifying', async () => {

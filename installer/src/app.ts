@@ -1331,7 +1331,6 @@ export class ConfiguratorApp {
     if (!file) return;
     this.configurationMessage = '';
     this.configurationError = '';
-    let loaded = false;
     try {
       if (file.size > 1024 * 1024) throw new Error('Choose a macro smaller than 1 MiB.');
       await this.loadConfigurationSource(
@@ -1340,24 +1339,22 @@ export class ConfiguratorApp {
         'upload',
       );
       this.installationMode = 'install';
-      loaded = true;
     } catch (error) {
       this.configurationError = error instanceof Error ? error.message : String(error);
     }
-    if (loaded) this.navigateToStep(2);
-    else this.render();
+    this.render();
   }
 
   private async beginDeviceMacroFetch(): Promise<void> {
     const session = this.deviceSession.snapshot();
     if (session.connected && session.verifiedDevice?.serialMatches) {
-      await this.fetchInstalledMacro(true);
+      await this.fetchInstalledMacro();
       return;
     }
     this.openDeviceConnection(true);
   }
 
-  private async fetchInstalledMacro(navigateAfterLoad = false): Promise<void> {
+  private async fetchInstalledMacro(): Promise<void> {
     const session = this.deviceSession.snapshot();
     if (!session.connected || !session.verifiedDevice?.serialMatches || !this.catalog) return;
     const macroName = latestCatalogRelease(this.catalog).macro.macroName;
@@ -1366,7 +1363,6 @@ export class ConfiguratorApp {
     this.busy = true;
     this.statusMessage = `Reading ${macroName} from the verified device.`;
     this.render();
-    let loaded = false;
     try {
       const source = await this.deviceSession.fetchInstalledMacro(macroName);
       await this.loadConfigurationSource(
@@ -1377,15 +1373,13 @@ export class ConfiguratorApp {
       this.installationMode = 'update';
       this.statusMessage = 'The installed macro configuration was loaded without changing the device.';
       this.pendingDeviceAction = undefined;
-      loaded = true;
     } catch (error) {
       this.configurationError = error instanceof Error ? error.message : String(error);
       this.statusMessage = 'The device was not changed.';
       this.pendingDeviceAction = undefined;
     } finally {
       this.busy = false;
-      if (loaded && navigateAfterLoad) this.navigateToStep(2);
-      else this.render();
+      this.render();
     }
   }
 
@@ -1505,7 +1499,7 @@ export class ConfiguratorApp {
       this.busy = false;
       this.render();
     }
-    if (actionAfterConnect === 'fetch-macro') await this.fetchInstalledMacro(true);
+    if (actionAfterConnect === 'fetch-macro') await this.fetchInstalledMacro();
     if (actionAfterConnect === 'install') await this.installDevice();
   }
 
