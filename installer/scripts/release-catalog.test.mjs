@@ -23,6 +23,13 @@ function response(body, status = 200) {
 }
 
 describe('Release catalog preparation', () => {
+  it('restores development assets after the production build completes', async () => {
+    const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+
+    expect(packageJson.scripts.build).toContain('prepare-assets.mjs --production');
+    expect(packageJson.scripts.postbuild).toBe('node scripts/prepare-assets.mjs');
+  });
+
   it('parses only the intentionally simple manifest contract', () => {
     expect(parseSimpleReleaseManifest({
       version: 1,

@@ -62,8 +62,11 @@ an unverified download, or an external CORS proxy. A production build also
 requires the repository-root macro's `Version:` header to match the latest
 compatible published Release, while packaging the verified Release asset rather
 than the checkout copy. Production preparation removes the local-development
-asset and catalog entry. The browser continues generating its configuration-
-specific PDF guide; released PDF assets are not downloaded or packaged.
+asset and catalog entry from the generated `dist`; after a successful build, the
+`postbuild` lifecycle restores development assets under `public` so a running
+localhost server does not remain in production mode. The browser continues
+generating its configuration-specific PDF guide; released PDF assets are not
+downloaded or packaged.
 
 When the installer is served from `localhost` or `127.0.0.1`, **Choose Release**
 also includes **Local Development · Macro Version vX.Y.Z**. Selecting it uses the

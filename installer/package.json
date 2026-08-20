@@ -8,6 +8,7 @@
     "prepare:assets": "node scripts/prepare-assets.mjs",
     "dev": "npm run prepare:assets && vite --host 127.0.0.1 --port 5177",
     "build": "node scripts/prepare-assets.mjs --production && tsc --noEmit && vite build",
+    "postbuild": "node scripts/prepare-assets.mjs",
     "test": "vitest run",
     "fixtures:operator-guide": "node scripts/generate-operator-guide-fixtures.mjs"
   },
