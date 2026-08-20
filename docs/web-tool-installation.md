@@ -13,6 +13,7 @@ Use it when you want to:
 - build a fresh configuration without editing JavaScript;
 - resume from a locally saved solution macro;
 - fetch the marked configuration object from an installed macro;
+- discover configured camera inputs and their connection status;
 - assign all 16 physical buttons with guided validation;
 - install or update both required macros on a verified RoomOS device;
 - generate a one-page PDF guide for the room's exact configuration.
@@ -26,7 +27,7 @@ Confirm that you have:
 - a supported RoomOS device with the Thrustmaster T.16000M connected;
 - administrator credentials for the device;
 - the expected device serial number for exact-target verification;
-- one to four camera `ConnectorId` and `ControlId` pairs;
+- one to four camera `ConnectorId` values and optional Camera ControlIds;
 - a free matrix output if Preview will be enabled;
 - a maintenance window in which restarting every active RoomOS macro is acceptable.
 
@@ -67,7 +68,11 @@ Refreshing the browser warns before discarding workflow progress and returns to 
 
 Set the project and room identity, starting handedness, default-camera behavior, Joystick Controls panel location, Preview display behavior, camera movement speeds, and one to four camera sources.
 
-Each camera receives a readable `ButtonAction`, such as `SelectPresenter` or `SelectCamera1`, generated from its name. The action remains separate from the camera's video `ConnectorId` and PTZ `ControlId`.
+Configured cameras remain editable on the left. **Discovered Cameras** on the right reads every video input connector whose `InputSourceType` is `camera`, then joins its CameraId to `xStatus Cameras` for connection and model information. A verified connection is reused; otherwise **Discover Cameras** opens the same exact-device connection prompt without fetching the macro. Results are refreshed once per connection, can be refreshed manually, and are cleared when that connection closes.
+
+Discovery never changes the RoomOS video-input name or any other input configuration. Disconnected cameras and sources whose device CameraControl Mode is Off remain addable with warnings. ConnectorIds are unique: adding a matching connector updates its discovered name and ControlId while preserving its default-camera and joystick-button relationships. Multiple sources may share a ControlId.
+
+Each camera receives a readable `ButtonAction`, such as `SelectPresenter` or `SelectCamera1`, generated from its name. The action remains separate from the camera's video `ConnectorId` and optional PTZ `ControlId`. Camera ControlId offers `1` through `15` plus **Disabled (USB/ThirdParty)**; Disabled generates `ControlId: null` so switching continues while joystick camera movement becomes a safe no-op.
 
 ### 3. Button Assignments
 
@@ -95,6 +100,7 @@ Every connection starts in a secure modal without leaving the current workflow p
 The tool:
 
 - connects to the device and compares its serial number with the expected value;
+- uses the same verified connection for camera discovery without fetching the macro;
 - does not display or log the observed serial number;
 - preserves the current workflow page when the connection modal closes;
 - refreshes active-call status before installation confirmation;
@@ -114,7 +120,7 @@ After verification and confirmation, the Web Installer:
 
 The complete install or update sequence remains visible until the macro reports ready, fails, or times out.
 
-Fetching an installed configuration is read-only. It uses `Macros Macro Get` on an already verified connection and does not restart the macro runtime.
+Fetching an installed configuration is read-only. It uses `Macros Macro Get` on an already verified connection and does not restart the macro runtime. Camera discovery is also read-only: it reads video-input configuration and camera status without writing the input name, CameraId, CameraControl Mode, or any other device setting.
 
 ## Configuration-specific operator guide
 
@@ -124,6 +130,7 @@ The Review page generates a real PDF locally in the browser. The guide is exactl
 - handedness and Preview status;
 - all 16 physical button assignments;
 - configured camera names;
+- video-only labels for sources whose Camera ControlId is Disabled;
 - pan/tilt, zoom, and Precision Mode settings;
 - the joystick control diagram;
 - the RoomOS steps for enabling joystick operation.

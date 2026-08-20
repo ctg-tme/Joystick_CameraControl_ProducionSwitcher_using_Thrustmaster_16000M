@@ -94,6 +94,23 @@ describe('configured operator guide model', () => {
       available: false,
     });
   });
+
+  it('identifies video-only sources without exposing their ControlId', () => {
+    const state = configuredState();
+    state.cameras[0].ControlId = null;
+
+    const model = createOperatorGuideModel(state);
+
+    expect(model.cameras[0]).toMatchObject({
+      name: 'Lectern Closeup',
+      videoOnly: true,
+      controlNote: 'Video only — joystick camera control unavailable',
+    });
+    expect(model.buttons.find((button) => button.number === 11)?.action).toBe(
+      'Lectern Closeup — video only',
+    );
+    expect(JSON.stringify(model)).not.toContain('ControlId');
+  });
 });
 
 describe('configured operator guide PDF', () => {

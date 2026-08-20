@@ -1105,6 +1105,15 @@ code {
   font-size: 11px;
 }
 
+.field small.field-validation-error {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.field select[aria-invalid="true"] {
+  border-color: var(--negative-border-default);
+}
+
 .field input,
 .field select {
   width: 100%;
@@ -1197,6 +1206,148 @@ code {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.camera-source-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.configured-cameras-pane .camera-grid {
+  grid-template-columns: 1fr;
+}
+
+.camera-pane-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.camera-pane-heading h3 {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.camera-pane-heading > span,
+.camera-pane-heading small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compact-button {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.discovered-cameras-pane {
+  min-width: 0;
+  padding-left: 22px;
+  border-left: 1px solid var(--line);
+}
+
+.camera-discovery-empty {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  padding: 20px;
+  border: 1px dashed var(--control-border-default);
+  border-radius: 8px;
+  background: var(--base-bg-weak-default);
+}
+
+.camera-discovery-empty p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.discovered-camera-list {
+  display: grid;
+  gap: 12px;
+}
+
+.discovered-camera-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--control-border-weak-default);
+  border-radius: 8px;
+  background: var(--control-bg-weak-default);
+}
+
+.discovered-camera-card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.camera-connection {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  border-radius: 50px;
+  background: var(--base-bg-medium-active);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
+}
+
+.camera-connection.connected {
+  background: var(--positive-bg-medium-default);
+  color: var(--ink);
+}
+
+.camera-connection.disconnected {
+  background: var(--warning-bg-medium-default);
+  color: var(--ink);
+}
+
+.discovered-camera-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.discovered-camera-card dl div:last-child {
+  grid-column: 1 / -1;
+}
+
+.discovered-camera-card dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.discovered-camera-card dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.camera-discovery-warnings {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  color: var(--ink);
+  font-size: 12px;
+  list-style: none;
+}
+
+.camera-discovery-warnings li::before {
+  margin-right: 6px;
+  content: "⚠";
+}
+
+.camera-message {
+  margin-top: 14px;
 }
 
 .camera-card {
@@ -2578,6 +2729,25 @@ td code {
   .workflow-grid,
   .device-form {
     grid-template-columns: 1fr;
+  }
+
+  .camera-source-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .discovered-cameras-pane {
+    padding: 22px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .camera-pane-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .camera-pane-heading .button {
+    width: 100%;
   }
 
   .project-field {

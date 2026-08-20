@@ -57,11 +57,11 @@ Enabling joystick control sets SpeakerTrack behavior to Manual and attempts to d
 The panel's **Status** page gives the operator an at-a-glance view of:
 
 - whether joystick controls are enabled;
-- the current control method: `Live` for Main or `Preview` for the staged source;
+- **Controlling**: `Live` for Main or `Preview` for the staged source, with `video only` when that source has no Camera ControlId;
 - the camera currently assigned to Main;
 - the camera currently assigned to Preview, or `Disabled` when Preview is off.
 
-![The Joystick Controls Status page showing control method, Main, and Preview](docs/images/joystick-status-panel.png)
+![The Joystick Controls Status page showing Controlling, Main, and Preview](docs/images/joystick-status-panel.png)
 
 ### Joystick movement
 
@@ -144,9 +144,9 @@ For every source, collect:
 
 - a short operator-facing camera name;
 - the RoomOS video input `ConnectorId` used to put the source on Main or Preview;
-- the RoomOS camera `ControlId` that receives pan, tilt, and zoom commands.
+- the RoomOS camera `ControlId` from `1` through `15` that receives pan, tilt, and zoom commands, or `null` for a USB or third-party video-only source.
 
-`ConnectorId` and `ControlId` are different identifiers even when they happen to use the same number.
+`ConnectorId` and `ControlId` are different identifiers even when they happen to use the same number. Every configured `ConnectorId` must be unique; multiple sources may share a `ControlId`.
 
 ### Configuration reference
 
@@ -180,14 +180,16 @@ cameras: [
   },
   {
     ButtonAction: 'SelectCamera2',
-    Name: 'Audience',
+    Name: 'USB Audience',
     ConnectorId: '2',
-    ControlId: '2'
+    ControlId: null
   }
 ]
 ```
 
-The array must contain between one and four cameras. Every camera action must be unique and assigned to exactly one physical button.
+The array must contain between one and four cameras. Every camera action and `ConnectorId` must be unique, and every camera action must be assigned to exactly one physical button. A source with `ControlId: null` still switches normally, but joystick pan, tilt, and zoom are disabled whenever that video-only source is selected.
+
+`Name` is macro metadata used for operator-facing labels and status only. The macro does not write it—or any other value—to the RoomOS video-input connector configuration.
 
 ### Assign all 16 buttons
 
@@ -217,13 +219,13 @@ Use this path when you prefer direct control of the macro source or cannot use t
 7. Import `Joystick_CameraControl_ProductionSwitcher.js`, then save and activate it.
 8. Restart the macro runtime. **This restarts every active macro on the device**, so perform this step during an appropriate maintenance window.
 9. Open **Joystick Controls** on the touch controller, confirm the handedness, and select **Enabled**.
-10. Open **Status** and verify the expected Main camera, Preview camera, and control method before operating the room.
+10. Open **Status** and verify the expected Main camera, Preview camera, and Controlling role before operating the room.
 
 The solution macro automatically enables RoomOS joystick input and installs or updates its touch-panel UI each time it starts. Look for `Joystick Ready with Pan/Tilt/Zoom` in the macro logs to confirm successful initialization.
 
 ## Web Installer details
 
-The browser configurator can discover an installed configuration, guide button assignments, install or update both macros, and generate a configuration-specific PDF operator guide. Its device workflow restarts the RoomOS macro runtime, so review the advanced deployment details before connecting to a production device.
+The browser configurator can discover configured camera inputs, fetch an installed macro configuration, guide button assignments, install or update both macros, and generate a configuration-specific PDF operator guide. Camera discovery and macro fetch are read-only; installation restarts the RoomOS macro runtime, so review the advanced deployment details before connecting to a production device.
 
 See [Web Installer configuration and installation](docs/web-tool-installation.md) for device checks, security behavior, operator-guide generation, and local development instructions.
 

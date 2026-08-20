@@ -369,6 +369,27 @@ describe('configurator workflow presentation', () => {
     expect(readme).toContain('`config.joystick.Camera.SlowModeDivisor`');
   });
 
+  it('presents read-only camera discovery beside manual camera configuration', async () => {
+    const [source, styles] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(source).toContain('<h3>Configured cameras</h3>');
+    expect(source).toContain('id="discovered-cameras-title">Discovered cameras</h3>');
+    expect(source).toContain('id="discover-cameras"');
+    expect(source).toContain('id="refresh-cameras"');
+    expect(source).toContain('data-use-discovered-camera');
+    expect(source).toContain('Disabled (USB/ThirdParty)');
+    expect(source).toContain("type PendingDeviceAction = 'install' | 'fetch-macro' | 'discover-cameras'");
+    expect(source).toContain("if (actionAfterConnect === 'discover-cameras') await this.discoverCameras(true);");
+    expect(source).toContain('Four-camera limit reached');
+    expect(source).toContain("const nextDisabled = currentStep === 2 && validateConfiguratorState(this.state).length > 0;");
+    expect(styles).toContain('.camera-source-layout');
+    expect(styles).toContain('.discovered-cameras-pane');
+    expect(styles).toContain('.discovered-camera-card');
+  });
+
   it('allows camera-field tooltips to escape the camera card boundary', async () => {
     const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
 

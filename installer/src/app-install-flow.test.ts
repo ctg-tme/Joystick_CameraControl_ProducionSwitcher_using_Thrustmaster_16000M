@@ -92,6 +92,7 @@ describe('direct installation connection flow', () => {
       snapshot: () => ({ connected: false }),
       connect: vi.fn(),
       fetchInstalledMacro: vi.fn(),
+      discoverCameraSources: vi.fn(async () => []),
       recheck: vi.fn(),
       install: vi.fn(),
       disconnect: vi.fn(),
@@ -136,6 +137,7 @@ describe('direct installation connection flow', () => {
       }),
       connect: vi.fn(),
       fetchInstalledMacro,
+      discoverCameraSources: vi.fn(async () => []),
       recheck: vi.fn(),
       install: vi.fn(),
       disconnect: vi.fn(),
@@ -181,6 +183,7 @@ describe('direct installation connection flow', () => {
         return state;
       }),
       fetchInstalledMacro: vi.fn(),
+      discoverCameraSources: vi.fn(async () => []),
       recheck: vi.fn(async () => state),
       install,
       disconnect: vi.fn(),
@@ -216,6 +219,107 @@ describe('direct installation connection flow', () => {
     expect(install).toHaveBeenCalledOnce();
   });
 
+  it('connects and discovers cameras without fetching or installing the macro', async () => {
+    let state: DeviceInstallationState = { connected: false };
+    const fetchInstalledMacro = vi.fn();
+    const install = vi.fn();
+    const discoverCameraSources = vi.fn(async () => [{
+      ConnectorId: '2',
+      Name: 'Presenter',
+      ControlId: '1',
+      cameraControlMode: 'On',
+      connection: 'connected' as const,
+      model: 'Quad Camera',
+    }]);
+    const session: DeviceInstallationSession = {
+      snapshot: () => state,
+      connect: vi.fn(async () => {
+        state = {
+          connected: true,
+          host: 'room.example.test',
+          verifiedDevice: {
+            productPlatform: 'Room Kit Pro',
+            roomOsVersion: 'RoomOS 26',
+            serialMatches: true,
+            activeCalls: 0,
+          },
+        };
+        return state;
+      }),
+      fetchInstalledMacro,
+      discoverCameraSources,
+      recheck: vi.fn(async () => state),
+      install,
+      disconnect: vi.fn(),
+    };
+    const app = new ConfiguratorApp(testRoot(), session, testWorkflow(2));
+    const testableApp = app as unknown as {
+      credentials: DeviceCredentials;
+      expectedSerial: string;
+      discoveredCameras: unknown[];
+      openDeviceConnection(fetchMacro: boolean, discoverCameras?: boolean): void;
+      connectDevice(): Promise<void>;
+    };
+    testableApp.credentials = {
+      host: 'room.example.test',
+      username: 'admin',
+      password: 'secret',
+    };
+    testableApp.expectedSerial = 'SERIAL-1';
+
+    testableApp.openDeviceConnection(false, true);
+    await testableApp.connectDevice();
+
+    expect(discoverCameraSources).toHaveBeenCalledOnce();
+    expect(testableApp.discoveredCameras).toHaveLength(1);
+    expect(fetchInstalledMacro).not.toHaveBeenCalled();
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it('updates a discovered connector in place while preserving its relationships', () => {
+    const session: DeviceInstallationSession = {
+      snapshot: () => ({ connected: false }),
+      connect: vi.fn(),
+      fetchInstalledMacro: vi.fn(),
+      discoverCameraSources: vi.fn(async () => []),
+      recheck: vi.fn(),
+      install: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const app = new ConfiguratorApp(testRoot(), session, testWorkflow(2));
+    const testableApp = app as unknown as {
+      state: ConfiguratorState;
+      discoveredCameras: Array<{
+        ConnectorId: string;
+        Name: string;
+        ControlId: string | null;
+        connection: 'connected';
+      }>;
+      addOrUpdateDiscoveredCamera(connectorId: string): void;
+    };
+    const original = createDefaultState();
+    testableApp.state = original;
+    testableApp.discoveredCameras = [{
+      ConnectorId: '1',
+      Name: 'Presenter',
+      ControlId: '3',
+      connection: 'connected',
+    }];
+    const originalId = original.cameras[0].id;
+    const originalAssignment = original.assignments[12];
+
+    testableApp.addOrUpdateDiscoveredCamera('1');
+
+    expect(testableApp.state.cameras[0]).toMatchObject({
+      id: originalId,
+      Name: 'Presenter',
+      ConnectorId: '1',
+      ControlId: '3',
+    });
+    expect(testableApp.state.defaultCameraId).toBe(originalId);
+    expect(testableApp.state.assignments[12]).toBe(originalAssignment);
+  });
+
   it('migrates a fetched unknown source without writing to the device or leaving update mode', async () => {
     const install = vi.fn();
     const fetchInstalledMacro = vi.fn();
@@ -223,6 +327,7 @@ describe('direct installation connection flow', () => {
       snapshot: () => ({ connected: false }),
       connect: vi.fn(),
       fetchInstalledMacro,
+      discoverCameraSources: vi.fn(async () => []),
       recheck: vi.fn(),
       install,
       disconnect: vi.fn(),

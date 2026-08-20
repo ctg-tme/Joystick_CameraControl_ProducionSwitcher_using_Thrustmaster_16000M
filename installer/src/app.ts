@@ -7,6 +7,7 @@ import {
 import {
   createDeviceInstallationSession,
   normalizeDeviceHost,
+  type DiscoveredCameraSource,
   type DeviceCredentials,
   type DeviceInstallationSession,
 } from './device';
@@ -111,7 +112,8 @@ const CONFIGURATION_DEFINITIONS = {
   },
   cameraControlId: {
     label: 'Camera ControlId',
-    description: 'The RoomOS camera identifier that receives this camera\'s PAN/TILT and ZOOM commands.',
+    optional: true,
+    description: 'The RoomOS camera identifier that receives PAN/TILT and ZOOM commands. Choose Disabled for USB or third-party video-only sources.',
   },
   defaultCamera: {
     label: 'Default camera',
@@ -123,7 +125,7 @@ type ConfigurationDefinitionKey = keyof typeof CONFIGURATION_DEFINITIONS;
 
 type ThemePreference = 'system' | 'light' | 'dark';
 type InstallationMode = 'install' | 'update';
-type PendingDeviceAction = 'install' | 'fetch-macro';
+type PendingDeviceAction = 'install' | 'fetch-macro' | 'discover-cameras';
 
 function storedThemePreference(): ThemePreference {
   try {
@@ -165,6 +167,21 @@ function integerOptions(minimum: number, maximum: number, selected: number): str
     .join('');
 }
 
+function isSupportedCameraControlId(selected: string | null): boolean {
+  return selected === null || /^(?:[1-9]|1[0-5])$/.test(selected.trim());
+}
+
+function cameraControlOptions(selected: string | null): string {
+  const supported = isSupportedCameraControlId(selected);
+  const unsupported = !supported
+    ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)} (unsupported)</option>`
+    : '';
+  return `${unsupported}<option value="" ${selected === null ? 'selected' : ''}>Disabled (USB/ThirdParty)</option>${Array.from(
+    { length: 15 },
+    (_, index) => String(index + 1),
+  ).map((value) => `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`).join('')}`;
+}
+
 function downloadText(fileName: string, content: string, type = 'text/javascript;charset=utf-8'): void {
   const link = document.createElement('a');
   link.href = URL.createObjectURL(new Blob([content], { type }));
@@ -203,6 +220,12 @@ export class ConfiguratorApp {
   private errorMessage = '';
   private configurationMessage = '';
   private configurationError = '';
+  private discoveredCameras: DiscoveredCameraSource[] = [];
+  private cameraDiscoveryHost?: string;
+  private cameraDiscoveryLoading = false;
+  private cameraDiscoveryScheduled = false;
+  private cameraDiscoveryError = '';
+  private cameraMessage = '';
 
   constructor(
     private readonly root: HTMLElement,
@@ -393,12 +416,13 @@ export class ConfiguratorApp {
     const currentStep = this.workflow.currentStep;
     const previous = currentStep > 1 ? (currentStep - 1) as WorkflowStep : undefined;
     const next = currentStep < WORKFLOW_STEPS.length ? (currentStep + 1) as WorkflowStep : undefined;
+    const nextDisabled = currentStep === 2 && validateConfiguratorState(this.state).length > 0;
     return `
       <footer class="workflow-actions no-print">
         <span>Page ${currentStep} of ${WORKFLOW_STEPS.length}</span>
         <div>
           ${previous ? `<button class="button secondary" type="button" data-workflow-step="${previous}">Back</button>` : ''}
-          ${next ? `<button class="button primary" type="button" data-workflow-step="${next}">Continue to ${WORKFLOW_STEPS[next - 1].title}</button>` : ''}
+          ${next ? `<button class="button primary" type="button" data-workflow-step="${next}" ${nextDisabled ? 'disabled' : ''}>Continue to ${WORKFLOW_STEPS[next - 1].title}</button>` : ''}
         </div>
       </footer>`;
   }
@@ -639,30 +663,87 @@ export class ConfiguratorApp {
           <div><span class="section-kicker">Camera sources</span><h2>Configure camera sources</h2></div>
           <p>Camera ButtonAction names are generated automatically and become choices in every button dropdown.</p>
         </div>
-        <div class="camera-grid">
-          ${this.state.cameras.map((camera, index) => `
-            <article class="camera-card">
-              <div class="camera-card-header">
-                <span class="camera-number">${index + 1}</span>
-                <div><strong>${escapeHtml(camera.Name || `Camera ${index + 1}`)}</strong><code>${escapeHtml(cameraActions.get(camera.id) ?? '')}</code></div>
-                <button class="icon-button" type="button" data-remove-camera="${escapeHtml(camera.id)}" ${this.state.cameras.length === 1 ? 'disabled' : ''} aria-label="Remove ${escapeHtml(camera.Name || 'camera')}">×</button>
-              </div>
-              <div class="camera-fields">
-                <label class="field wide">${this.renderConfigurationLabel('cameraName', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="Name" value="${escapeHtml(camera.Name)}"></label>
-                <label class="field">${this.renderConfigurationLabel('videoConnectorId', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="ConnectorId" inputmode="numeric" value="${escapeHtml(camera.ConnectorId)}"></label>
-                <label class="field">${this.renderConfigurationLabel('cameraControlId', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="ControlId" inputmode="numeric" value="${escapeHtml(camera.ControlId)}"></label>
-              </div>
-            </article>`).join('')}
-        </div>
-        <div class="camera-actions">
-          <button class="button secondary" id="add-camera" type="button" ${this.state.cameras.length >= 4 ? 'disabled' : ''}>Add camera</button>
-          <label class="field default-camera">${this.renderConfigurationLabel('defaultCamera')}
-            <select id="default-camera">
-              ${this.state.cameras.map((camera) => `<option value="${escapeHtml(camera.id)}" ${camera.id === this.state.defaultCameraId ? 'selected' : ''}>${escapeHtml(camera.Name || 'Unnamed camera')}</option>`).join('')}
-            </select>
-          </label>
+        <div class="camera-source-layout">
+          <div class="configured-cameras-pane">
+            <div class="camera-pane-heading"><h3>Configured cameras</h3><span>${this.state.cameras.length} of 4</span></div>
+            <div class="camera-grid">
+              ${this.state.cameras.map((camera, index) => {
+                const unsupportedControlId = !isSupportedCameraControlId(camera.ControlId);
+                return `<article class="camera-card">
+                  <div class="camera-card-header">
+                    <span class="camera-number">${index + 1}</span>
+                    <div><strong>${escapeHtml(camera.Name || `Camera ${index + 1}`)}</strong><code>${escapeHtml(cameraActions.get(camera.id) ?? '')}</code></div>
+                    <button class="icon-button" type="button" data-remove-camera="${escapeHtml(camera.id)}" ${this.state.cameras.length === 1 ? 'disabled' : ''} aria-label="Remove ${escapeHtml(camera.Name || 'camera')}">×</button>
+                  </div>
+                  <div class="camera-fields">
+                    <label class="field wide">${this.renderConfigurationLabel('cameraName', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="Name" value="${escapeHtml(camera.Name)}"></label>
+                    <label class="field">${this.renderConfigurationLabel('videoConnectorId', camera.id)}<input data-camera-id="${escapeHtml(camera.id)}" data-camera-field="ConnectorId" inputmode="numeric" value="${escapeHtml(camera.ConnectorId)}"></label>
+                    <label class="field">${this.renderConfigurationLabel('cameraControlId', camera.id)}<select data-camera-id="${escapeHtml(camera.id)}" data-camera-field="ControlId" ${unsupportedControlId ? 'aria-invalid="true"' : ''}>${cameraControlOptions(camera.ControlId)}</select>${camera.ControlId === null ? '<small>Video only — joystick camera control unavailable.</small>' : ''}${unsupportedControlId ? '<small class="field-validation-error">Unsupported ControlId — choose 1–15 or Disabled before continuing.</small>' : ''}</label>
+                  </div>
+                </article>`;
+              }).join('')}
+            </div>
+            <div class="camera-actions">
+              <button class="button secondary" id="add-camera" type="button" ${this.state.cameras.length >= 4 ? 'disabled' : ''}>Add camera</button>
+              <label class="field default-camera">${this.renderConfigurationLabel('defaultCamera')}
+                <select id="default-camera">
+                  ${this.state.cameras.map((camera) => `<option value="${escapeHtml(camera.id)}" ${camera.id === this.state.defaultCameraId ? 'selected' : ''}>${escapeHtml(camera.Name || 'Unnamed camera')}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+            ${this.cameraMessage ? `<div class="callout progress camera-message" role="status"><strong>Camera configuration updated</strong><p>${escapeHtml(this.cameraMessage)}</p></div>` : ''}
+          </div>
+          ${this.renderDiscoveredCameras()}
         </div>
       </section>`;
+  }
+
+  private renderDiscoveredCameras(): string {
+    const session = this.deviceSession.snapshot();
+    const connected = Boolean(session.connected && session.verifiedDevice?.serialMatches);
+    const discoveredForConnection = connected && this.cameraDiscoveryHost === session.host;
+    return `
+      <aside class="discovered-cameras-pane" aria-labelledby="discovered-cameras-title">
+        <div class="camera-pane-heading">
+          <div><h3 id="discovered-cameras-title">Discovered cameras</h3>${connected ? `<small>${escapeHtml(session.verifiedDevice?.productPlatform ?? 'Verified RoomOS device')}</small>` : ''}</div>
+          ${connected ? `<button class="button secondary compact-button" id="refresh-cameras" type="button" ${this.cameraDiscoveryLoading ? 'disabled' : ''}>${this.cameraDiscoveryLoading ? 'Discovering…' : 'Refresh cameras'}</button>` : ''}
+        </div>
+        ${!connected ? `
+          <div class="camera-discovery-empty">
+            <p>Connect to the exact RoomOS device to read its configured camera inputs. Discovery does not fetch the macro or change device configuration.</p>
+            <button class="button primary" id="discover-cameras" type="button">Discover Cameras</button>
+          </div>` : ''}
+        ${connected && this.cameraDiscoveryLoading ? '<div class="callout progress" role="status"><strong>Discovering cameras</strong><p>Reading video input configuration and camera status.</p></div>' : ''}
+        ${connected && this.cameraDiscoveryError ? `<div class="callout error" role="alert"><strong>Camera discovery failed</strong><p>${escapeHtml(this.cameraDiscoveryError)}</p></div>` : ''}
+        ${connected && discoveredForConnection && !this.cameraDiscoveryLoading && !this.cameraDiscoveryError && this.discoveredCameras.length === 0 ? '<div class="camera-discovery-empty"><p>No camera-type video input connectors were reported by this device.</p></div>' : ''}
+        ${connected && this.discoveredCameras.length ? `<div class="discovered-camera-list" aria-live="polite">${this.discoveredCameras.map((source) => {
+          const configured = this.state.cameras.find((camera) => camera.ConnectorId.trim() === source.ConnectorId);
+          const name = source.Name.trim() || configured?.Name.trim() || `Camera ${source.ConnectorId}`;
+          const upToDate = Boolean(
+            configured &&
+            configured.Name.trim() === name &&
+            configured.ControlId === source.ControlId,
+          );
+          const atLimit = !configured && this.state.cameras.length >= 4;
+          const action = upToDate ? 'Added' : configured ? 'Update Camera' : 'Add Camera';
+          const warnings = [
+            source.connection === 'disconnected' ? 'Camera is disconnected' : '',
+            source.connection === 'unavailable' ? 'Camera status unavailable' : '',
+            source.cameraControlMode?.toLowerCase() === 'off' ? 'Device camera control is disabled' : '',
+          ].filter(Boolean);
+          return `
+            <article class="discovered-camera-card">
+              <div class="discovered-camera-card-heading"><strong>${escapeHtml(name)}</strong><span class="camera-connection ${source.connection}">${source.connection === 'connected' ? 'Connected' : source.connection === 'disconnected' ? 'Disconnected' : 'Status unavailable'}</span></div>
+              <dl>
+                <div><dt>ConnectorId</dt><dd>${escapeHtml(source.ConnectorId)}</dd></div>
+                <div><dt>ControlId</dt><dd>${source.ControlId === null ? 'Disabled' : escapeHtml(source.ControlId)}</dd></div>
+                <div><dt>Model</dt><dd>${escapeHtml(source.model ?? 'Model unavailable')}</dd></div>
+              </dl>
+              ${warnings.length ? `<ul class="camera-discovery-warnings">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>` : ''}
+              <button class="button ${configured ? 'secondary' : 'primary'}" type="button" data-use-discovered-camera="${escapeHtml(source.ConnectorId)}" ${upToDate || atLimit || this.cameraDiscoveryLoading ? 'disabled' : ''}>${atLimit ? 'Four-camera limit reached' : action}</button>
+            </article>`;
+        }).join('')}</div>` : ''}
+      </aside>`;
   }
 
   private renderConfigurationLabel(key: ConfigurationDefinitionKey, instance = ''): string {
@@ -890,6 +971,7 @@ export class ConfiguratorApp {
 
   private renderDeviceConnectionModal(): string {
     const isFetch = this.pendingDeviceAction === 'fetch-macro';
+    const isDiscovery = this.pendingDeviceAction === 'discover-cameras';
     const isUpdate = this.installationMode === 'update';
     const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
     const operation = isUpdate ? 'update' : 'install';
@@ -897,11 +979,11 @@ export class ConfiguratorApp {
       <dialog class="device-connection-dialog no-print" id="device-connection-dialog" aria-labelledby="device-connection-title">
         <div class="confirm-dialog-shell device-connection-shell">
           <header>
-            <div><span class="section-kicker">Secure RoomOS connection</span><h2 id="device-connection-title">${isFetch ? 'Fetch Macro from Device' : `Connect to ${actionLabel}`}</h2></div>
+            <div><span class="section-kicker">Secure RoomOS connection</span><h2 id="device-connection-title">${isDiscovery ? 'Discover Cameras' : isFetch ? 'Fetch Macro from Device' : `Connect to ${actionLabel}`}</h2></div>
             <button class="icon-button" type="button" data-close-device-connection aria-label="Close device connection dialog" ${this.busy ? 'disabled' : ''}>×</button>
           </header>
           <div class="confirm-dialog-content device-connection-content">
-            <p>${isFetch ? 'Verify the exact device, then read its installed solution macro without changing or restarting RoomOS.' : `Verify the exact device, then immediately ${operation} the configured solution. This restarts every active macro on the device.`}</p>
+            <p>${isDiscovery ? 'Verify the exact device, then read its camera input configuration and status without fetching the macro or changing RoomOS.' : isFetch ? 'Verify the exact device, then read its installed solution macro without changing or restarting RoomOS.' : `Verify the exact device, then immediately ${operation} the configured solution. This restarts every active macro on the device.`}</p>
             <div class="device-form">
               <label class="field wide"><span>Device address</span><input id="device-host" placeholder="room-device.example.com" value="${escapeHtml(this.credentials.host)}" ${this.busy ? 'disabled' : ''}></label>
               <label class="field"><span>Administrator username</span><input id="device-username" autocomplete="username" value="${escapeHtml(this.credentials.username)}" ${this.busy ? 'disabled' : ''}></label>
@@ -915,7 +997,7 @@ export class ConfiguratorApp {
           <footer>
             <button class="button secondary" id="trust-certificate" type="button" ${this.busy ? 'disabled' : ''}>Open certificate page</button>
             <button class="button secondary" type="button" data-close-device-connection ${this.busy ? 'disabled' : ''}>Cancel</button>
-            <button class="button primary" id="connect-device" type="button" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Connecting…' : isFetch ? 'Connect, verify, and fetch' : `Connect, verify, and ${operation}`}</button>
+            <button class="button primary" id="connect-device" type="button" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Connecting…' : isDiscovery ? 'Connect, verify, and discover' : isFetch ? 'Connect, verify, and fetch' : `Connect, verify, and ${operation}`}</button>
           </footer>
         </div>
       </dialog>`;
@@ -1053,6 +1135,21 @@ export class ConfiguratorApp {
       const dialog = this.byId('installation-progress-dialog') as HTMLDialogElement | null;
       if (dialog && !dialog.open) dialog.showModal();
     }
+    const session = this.deviceSession.snapshot();
+    if (
+      this.workflow.currentStep === 2 &&
+      session.connected &&
+      session.verifiedDevice?.serialMatches &&
+      this.cameraDiscoveryHost !== session.host &&
+      !this.cameraDiscoveryLoading &&
+      !this.cameraDiscoveryScheduled
+    ) {
+      this.cameraDiscoveryScheduled = true;
+      window.setTimeout(() => {
+        this.cameraDiscoveryScheduled = false;
+        void this.discoverCameras(false);
+      }, 0);
+    }
   }
 
   private bindEvents(): void {
@@ -1094,11 +1191,14 @@ export class ConfiguratorApp {
       });
     });
 
-    this.root.querySelectorAll<HTMLInputElement>('[data-camera-id]').forEach((input) => {
+    this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-camera-id]').forEach((input) => {
       input.addEventListener('change', () => {
         const camera = this.cameraById(input.dataset.cameraId);
         const field = input.dataset.cameraField as 'Name' | 'ConnectorId' | 'ControlId';
-        if (camera && field) camera[field] = input.value;
+        if (camera && field === 'ControlId') camera.ControlId = input.value || null;
+        if (camera && field === 'Name') camera.Name = input.value;
+        if (camera && field === 'ConnectorId') camera.ConnectorId = input.value;
+        this.cameraMessage = '';
         this.render();
       });
     });
@@ -1168,6 +1268,11 @@ export class ConfiguratorApp {
     });
 
     this.byId('add-camera')?.addEventListener('click', () => this.addCamera());
+    this.byId('discover-cameras')?.addEventListener('click', () => void this.beginCameraDiscovery());
+    this.byId('refresh-cameras')?.addEventListener('click', () => void this.discoverCameras(true));
+    this.root.querySelectorAll<HTMLButtonElement>('[data-use-discovered-camera]').forEach((button) => {
+      button.addEventListener('click', () => this.addOrUpdateDiscoveredCamera(button.dataset.useDiscoveredCamera));
+    });
     this.byId('restore-default-controls')?.addEventListener('click', () => this.restoreDefaultControls());
     this.byId('fresh-installation')?.addEventListener('click', () => void this.startFreshInstallation());
     this.byId('import-macro-file')?.addEventListener('change', (event) => {
@@ -1385,17 +1490,92 @@ export class ConfiguratorApp {
     if (this.state.cameras.length >= 4) return;
     const id = `camera-${Date.now()}`;
     const number = this.state.cameras.length + 1;
+    let connectorNumber = 1;
+    const connectorIds = new Set(this.state.cameras.map((camera) => camera.ConnectorId.trim()));
+    while (connectorIds.has(String(connectorNumber))) connectorNumber += 1;
     this.state.cameras.push({
       id,
       Name: `Camera ${number}`,
-      ConnectorId: String(number),
-      ControlId: String(number),
+      ConnectorId: String(connectorNumber),
+      ControlId: String(connectorNumber),
     });
+    const assigned = this.assignAvailableButton(id, number);
+    this.cameraMessage = assigned
+      ? `Camera ${number} was added and assigned to an available joystick button.`
+      : `Camera ${number} was added. Assign this camera to one button in Configure Controls.`;
+    this.render();
+  }
+
+  private assignAvailableButton(cameraId: string, number: number): boolean {
     const preferredButtons = [DEFAULT_CAMERA_BUTTONS[number - 1], 13, 14, 8, 2, 11, 12, 15, 16, 5, 6, 7, 9, 10, 3, 4, 1]
       .filter((button): button is number => button !== undefined);
     const available = preferredButtons.find((button) => this.state.assignments[button] === UNUSED_ASSIGNMENT);
-    if (available) this.state.assignments[available] = cameraAssignment(id);
+    if (available) this.state.assignments[available] = cameraAssignment(cameraId);
+    return available !== undefined;
+  }
+
+  private addOrUpdateDiscoveredCamera(connectorId: string | undefined): void {
+    if (!connectorId) return;
+    const discovered = this.discoveredCameras.find((source) => source.ConnectorId === connectorId);
+    if (!discovered) return;
+    const configured = this.state.cameras.find((camera) => camera.ConnectorId.trim() === connectorId);
+    const name = discovered.Name.trim() || configured?.Name.trim() || `Camera ${connectorId}`;
+    if (configured) {
+      configured.Name = name;
+      configured.ControlId = discovered.ControlId;
+      this.cameraMessage = `${name} was updated from discovered ConnectorId ${connectorId}. Its default and button assignments were preserved.`;
+      this.render();
+      return;
+    }
+    if (this.state.cameras.length >= 4) return;
+    const id = `camera-${Date.now()}-${connectorId}`;
+    this.state.cameras.push({
+      id,
+      Name: name,
+      ConnectorId: connectorId,
+      ControlId: discovered.ControlId,
+    });
+    const assigned = this.assignAvailableButton(id, this.state.cameras.length);
+    this.cameraMessage = assigned
+      ? `${name} was added and assigned to an available joystick button.`
+      : `${name} was added. Assign this camera to one button in Configure Controls.`;
     this.render();
+  }
+
+  private async beginCameraDiscovery(): Promise<void> {
+    const session = this.deviceSession.snapshot();
+    if (!session.connected || !session.verifiedDevice?.serialMatches) {
+      this.openDeviceConnection(false, true);
+      return;
+    }
+    await this.discoverCameras(true);
+  }
+
+  private async discoverCameras(force: boolean): Promise<void> {
+    const session = this.deviceSession.snapshot();
+    if (!session.connected || !session.verifiedDevice?.serialMatches || this.cameraDiscoveryLoading) return;
+    if (!force && this.cameraDiscoveryHost === session.host) return;
+    this.cameraDiscoveryHost = session.host;
+    this.cameraDiscoveryLoading = true;
+    this.cameraDiscoveryError = '';
+    this.discoveredCameras = [];
+    this.render();
+    try {
+      this.discoveredCameras = await this.deviceSession.discoverCameraSources();
+    } catch (error) {
+      this.cameraDiscoveryError = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.cameraDiscoveryLoading = false;
+      this.render();
+    }
+  }
+
+  private clearCameraDiscovery(): void {
+    this.discoveredCameras = [];
+    this.cameraDiscoveryHost = undefined;
+    this.cameraDiscoveryLoading = false;
+    this.cameraDiscoveryScheduled = false;
+    this.cameraDiscoveryError = '';
   }
 
   private downloadConfiguredMacro(): void {
@@ -1419,9 +1599,9 @@ export class ConfiguratorApp {
     }
   }
 
-  private openDeviceConnection(fetchMacro: boolean): void {
+  private openDeviceConnection(fetchMacro: boolean, discoverCameras = false): void {
     this.workflow.markProgress();
-    this.pendingDeviceAction = fetchMacro ? 'fetch-macro' : 'install';
+    this.pendingDeviceAction = discoverCameras ? 'discover-cameras' : fetchMacro ? 'fetch-macro' : 'install';
     this.deviceConnectionOpen = true;
     this.errorMessage = '';
     this.statusMessage = '';
@@ -1481,6 +1661,7 @@ export class ConfiguratorApp {
       this.busy = true;
       this.statusMessage = 'Connecting to the RoomOS device.';
       this.render();
+      this.clearCameraDiscovery();
       const session = await this.deviceSession.connect(this.credentials, this.expectedSerial);
       this.credentials.host = session.host ?? this.credentials.host;
       this.persistDeviceIdentity();
@@ -1488,7 +1669,9 @@ export class ConfiguratorApp {
       this.pendingDeviceAction = undefined;
       this.statusMessage = actionAfterConnect === 'fetch-macro'
         ? 'Connected and verified. Reading the installed macro.'
-        : 'Connected and verified. Starting installation.';
+        : actionAfterConnect === 'discover-cameras'
+          ? 'Connected and verified. Discovering cameras.'
+          : 'Connected and verified. Starting installation.';
       this.deviceConnectionOpen = false;
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : String(error);
@@ -1498,11 +1681,13 @@ export class ConfiguratorApp {
       this.render();
     }
     if (actionAfterConnect === 'fetch-macro') await this.fetchInstalledMacro();
+    if (actionAfterConnect === 'discover-cameras') await this.discoverCameras(true);
     if (actionAfterConnect === 'install') await this.installDevice();
   }
 
   private disconnectDevice(): void {
     this.deviceSession.disconnect();
+    this.clearCameraDiscovery();
     this.credentials.password = '';
     this.statusMessage = 'Disconnected. Credentials were cleared from the active connection.';
     this.pendingDeviceAction = undefined;

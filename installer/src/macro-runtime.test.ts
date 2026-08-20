@@ -6,10 +6,10 @@ const macroUrl = new URL('../../Joystick_CameraControl_ProductionSwitcher.js', i
 interface RecoverySnapshot {
   enabled: boolean;
   mainVideo: string;
-  mainControl: string;
+  mainControl: string | null;
   previewVideo: string;
-  previewControl: string;
-  currentControl: string;
+  previewControl: string | null;
+  currentControl: string | null;
   controlling: string;
   handedness: string;
   trigger: boolean;
@@ -28,6 +28,8 @@ interface RecoveryRuntime {
   controlMain(): void;
   controlPreview(): void;
   selectSource(cameraButtonAction: string): void;
+  updateRamp(): void;
+  stopMovement(): Promise<void>;
   installPanel(): Promise<void>;
   statusSections(): Record<string, string>;
   dispatchInput(data: unknown): void;
@@ -81,6 +83,8 @@ function createRecoveryRuntime(source: string, xapi: unknown, logger: Console): 
       controlMain() { joystickDemoHandleControlMain('Released', 'TEST_MAIN'); },
       controlPreview() { joystickDemoHandleControlPreview('Released', 'TEST_PREVIEW'); },
       selectSource(cameraButtonAction) { joystickDemoSelectSource(cameraButtonAction, 'TEST_CAMERA'); },
+      updateRamp: joystickDemoUpdateCameraRamp,
+      stopMovement: joystickDemoStopCameraMovement,
       installPanel: installJoystickDemoPanel,
       statusSections: joystickDemoGetStatusSections,
       dispatchInput(data) {
@@ -219,6 +223,13 @@ describe('joystick runtime behavior', () => {
     expect(source).not.toMatch(/PresenterTrack\.Set\(\{ Mode: '(Follow|Persistent|Background)' \}\)/);
   });
 
+  it('never changes the RoomOS video input connector name configuration', async () => {
+    const source = await readFile(macroUrl, 'utf8');
+
+    expect(source).not.toContain('xapi.Config.Video.Input.Connector');
+    expect(source).not.toContain('xapi.config.set');
+  });
+
   it('does not use Video Graphics or TextLine display APIs', async () => {
     const source = await readFile(macroUrl, 'utf8');
 
@@ -259,21 +270,21 @@ describe('joystick runtime behavior', () => {
     expect(statusPage.match(/<Row>/g)).toHaveLength(4);
     expect(statusPage.match(/<Type>Text<\/Type>/g)).toHaveLength(4);
     expect(statusPage).toContain('<WidgetId>${joystickDemoEnabledStatusWidgetId}</WidgetId>');
-    expect(statusPage).toContain('<WidgetId>${joystickDemoControlMethodStatusWidgetId}</WidgetId>');
+    expect(statusPage).toContain('<WidgetId>${joystickDemoControllingStatusWidgetId}</WidgetId>');
     expect(statusPage).toContain('<WidgetId>${joystickDemoMainStatusWidgetId}</WidgetId>');
     expect(statusPage).toContain('<WidgetId>${joystickDemoPreviewStatusWidgetId}</WidgetId>');
     expect(source).toContain('Value: sections.Enabled');
-    expect(source).toContain('Value: sections.ControlMethod');
+    expect(source).toContain('Value: sections.Controlling');
     expect(source).toContain('Value: sections.Main');
     expect(source).toContain('Value: sections.Preview');
     expect(source).toContain("Enabled: joystickDemoFormatStatusSection('Joystick controls', joystickDemoEnabled ? 'Enabled' : 'Disabled')");
-    expect(source).toContain("ControlMethod: joystickDemoFormatStatusSection('Control method', controlMethod)");
+    expect(source).toContain("Controlling: joystickDemoFormatStatusSection('Controlling', controlling)");
     expect(source).toContain("Main: joystickDemoFormatStatusSection('Main', mainCamera)");
     expect(source).toContain("Preview: joystickDemoFormatStatusSection('Preview', previewCamera)");
     expect(source).toContain('[joystickDemoControlsPageId, joystickDemoStatusPageId].includes(PageId)');
   });
 
-  it('swaps the Status camera names and control method while retaining the controlled camera', async () => {
+  it('swaps the Status camera names and Controlling role while retaining the controlled camera', async () => {
     const source = await readFile(macroUrl, 'utf8');
     const xapi = {
       Command: {
@@ -296,7 +307,7 @@ describe('joystick runtime behavior', () => {
     runtime.prepare();
 
     expect(runtime.statusSections()).toMatchObject({
-      ControlMethod: 'Control method: Preview',
+      Controlling: 'Controlling: Preview',
       Main: 'Main: Camera 2',
       Preview: 'Preview: Camera 3',
     });
@@ -310,7 +321,7 @@ describe('joystick runtime behavior', () => {
       controlling: 'main',
     });
     expect(runtime.statusSections()).toMatchObject({
-      ControlMethod: 'Control method: Live',
+      Controlling: 'Controlling: Live',
       Main: 'Main: Camera 3',
       Preview: 'Preview: Camera 2',
     });
@@ -324,7 +335,7 @@ describe('joystick runtime behavior', () => {
       controlling: 'preview',
     });
     expect(runtime.statusSections()).toMatchObject({
-      ControlMethod: 'Control method: Preview',
+      Controlling: 'Controlling: Preview',
       Main: 'Main: Camera 2',
       Preview: 'Preview: Camera 3',
     });
@@ -356,7 +367,7 @@ describe('joystick runtime behavior', () => {
     runtime.controlMain();
     runtime.selectSource('SelectCamera4');
     expect(runtime.statusSections()).toMatchObject({
-      ControlMethod: 'Control method: Live',
+      Controlling: 'Controlling: Live',
       Main: 'Main: Camera 4',
       Preview: 'Preview: Camera 3',
     });
@@ -364,17 +375,71 @@ describe('joystick runtime behavior', () => {
     runtime.controlPreview();
     runtime.selectSource('SelectCamera1');
     expect(runtime.statusSections()).toMatchObject({
-      ControlMethod: 'Control method: Preview',
+      Controlling: 'Controlling: Preview',
       Main: 'Main: Camera 4',
       Preview: 'Preview: Camera 1',
     });
 
     await runtime.swap();
     expect(runtime.statusSections()).toMatchObject({
-      ControlMethod: 'Control method: Live',
+      Controlling: 'Controlling: Live',
       Main: 'Main: Camera 1',
       Preview: 'Preview: Camera 4',
     });
+  });
+
+  it('routes video-only sources while suppressing every camera ramp command', async () => {
+    const source = (await readFile(macroUrl, 'utf8')).replace("ControlId: '4'", 'ControlId: null');
+    const rampCalls: Record<string, unknown>[] = [];
+    const xapi = {
+      Command: {
+        Camera: { Ramp: async (parameters: Record<string, unknown>) => { rampCalls.push(parameters); } },
+        Video: {
+          Input: { SetMainVideoSource: async () => undefined },
+          Matrix: { Assign: async () => undefined },
+        },
+        UserInterface: {
+          Extensions: { Widget: { SetValue: async () => undefined } },
+        },
+      },
+    };
+    const logger = {
+      log: () => undefined,
+      debug: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    } as unknown as Console;
+    const runtime = createRecoveryRuntime(source, xapi, logger);
+    runtime.prepare();
+    runtime.controlMain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    rampCalls.length = 0;
+
+    runtime.selectSource('SelectCamera4');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(rampCalls).toHaveLength(3);
+    expect(rampCalls.every((parameters) => parameters.CameraId === '2')).toBe(true);
+    expect(runtime.snapshot()).toMatchObject({
+      mainVideo: '4',
+      mainControl: null,
+      currentControl: null,
+      axes: { Y: 0, RZ: 0, HAT0Y: 0 },
+    });
+    expect(runtime.statusSections()).toMatchObject({
+      Controlling: 'Controlling: Live — video only',
+      Main: 'Main: Camera 4',
+    });
+
+    rampCalls.length = 0;
+    runtime.updateRamp();
+    await runtime.stopMovement();
+    expect(rampCalls).toEqual([]);
+
+    runtime.selectSource('SelectCamera1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(runtime.snapshot().currentControl).toBe('1');
+    expect(rampCalls).toEqual([]);
   });
 
   it('downloads the installer icon and applies it to the saved Joystick Controls panel', async () => {

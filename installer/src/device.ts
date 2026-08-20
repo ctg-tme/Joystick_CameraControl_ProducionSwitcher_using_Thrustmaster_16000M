@@ -15,6 +15,17 @@ export interface VerifiedDevice {
   activeCalls: number;
 }
 
+export type DiscoveredCameraConnection = 'connected' | 'disconnected' | 'unavailable';
+
+export interface DiscoveredCameraSource {
+  ConnectorId: string;
+  Name: string;
+  ControlId: string | null;
+  cameraControlMode?: string;
+  connection: DiscoveredCameraConnection;
+  model?: string;
+}
+
 export interface InstallSources {
   dependencies: Array<{
     name: string;
@@ -88,6 +99,118 @@ function scalarString(value: unknown): string {
     if (typeof record.Value === 'string' || typeof record.Value === 'number') return String(record.Value);
   }
   throw new Error('The device returned an unexpected status value.');
+}
+
+function optionalScalarString(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const scalar = optionalScalarString(item);
+      if (scalar !== undefined) return scalar;
+    }
+    return undefined;
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  return optionalScalarString(record.Value);
+}
+
+function objectField(record: Record<string, unknown>, ...names: string[]): unknown {
+  const normalizedNames = new Set(names.map((name) => name.toLowerCase()));
+  const key = Object.keys(record).find((candidate) => normalizedNames.has(candidate.toLowerCase()));
+  return key === undefined ? undefined : record[key];
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function collectionItems(
+  value: unknown,
+  collectionName: string,
+  isItem: (record: Record<string, unknown>) => boolean,
+): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      const record = recordValue(item);
+      return record ? [record] : [];
+    });
+  }
+  const record = recordValue(value);
+  if (!record) return [];
+  if (isItem(record)) return [record];
+
+  const direct = objectField(record, collectionName);
+  if (direct !== undefined) {
+    const items = collectionItems(direct, collectionName, isItem);
+    if (items.length) return items;
+  }
+  for (const child of Object.values(record)) {
+    const items = collectionItems(child, collectionName, isItem);
+    if (items.length) return items;
+  }
+  return [];
+}
+
+/** Normalizes JSXAPI collection/container variants into installer camera-source records. */
+export function discoverCameraSourcesFromResponses(
+  connectorConfiguration: unknown,
+  cameraStatus: unknown,
+  statusAvailable = true,
+): DiscoveredCameraSource[] {
+  const connectors = collectionItems(
+    connectorConfiguration,
+    'Connector',
+    (record) => objectField(record, 'InputSourceType') !== undefined,
+  );
+  const cameras = statusAvailable
+    ? collectionItems(
+        cameraStatus,
+        'Camera',
+        (record) => objectField(record, 'Connected', 'Model', 'DetectedConnector') !== undefined,
+      )
+    : [];
+  const camerasById = new Map<string, Record<string, unknown>>();
+  for (const camera of cameras) {
+    const id = optionalScalarString(objectField(camera, 'id', 'Id'))?.trim();
+    if (id) camerasById.set(id, camera);
+  }
+
+  return connectors
+    .filter((connector) => optionalScalarString(objectField(connector, 'InputSourceType'))?.toLowerCase() === 'camera')
+    .flatMap((connector): DiscoveredCameraSource[] => {
+      const connectorId = optionalScalarString(objectField(connector, 'id', 'Id'))?.trim();
+      if (!connectorId) return [];
+      const cameraControl = recordValue(objectField(connector, 'CameraControl'));
+      const controlId = optionalScalarString(cameraControl && objectField(cameraControl, 'CameraId'))?.trim() || null;
+      const matchedStatus = controlId === null ? undefined : camerasById.get(controlId);
+      const connected = optionalScalarString(matchedStatus && objectField(matchedStatus, 'Connected'));
+      return [{
+        ConnectorId: connectorId,
+        Name: optionalScalarString(objectField(connector, 'Name'))?.trim() ?? '',
+        ControlId: controlId,
+        cameraControlMode: optionalScalarString(cameraControl && objectField(cameraControl, 'Mode')),
+        connection: statusAvailable
+          ? (connected?.toLowerCase() === 'true' ? 'connected' : 'disconnected')
+          : 'unavailable',
+        model: optionalScalarString(matchedStatus && objectField(matchedStatus, 'Model'))?.trim() || undefined,
+      }];
+    })
+    .sort((left, right) => left.ConnectorId.localeCompare(right.ConnectorId, undefined, { numeric: true }));
+}
+
+async function discoverCameraSources(xapi: DeviceXapi): Promise<DiscoveredCameraSource[]> {
+  const connectorConfiguration = await xapi.config.get('Video Input Connector');
+  try {
+    const cameraStatus = await xapi.status.get('Cameras');
+    return discoverCameraSourcesFromResponses(connectorConfiguration, cameraStatus);
+  } catch {
+    return discoverCameraSourcesFromResponses(connectorConfiguration, undefined, false);
+  }
 }
 
 async function verifyConnectedDevice(
@@ -246,6 +369,7 @@ export interface DeviceInstallationSession {
   snapshot(): DeviceInstallationState;
   connect(credentials: DeviceCredentials, expectedSerial: string): Promise<DeviceInstallationState>;
   fetchInstalledMacro(macroName: string): Promise<string>;
+  discoverCameraSources(): Promise<DiscoveredCameraSource[]>;
   recheck(): Promise<DeviceInstallationState>;
   install(sources: InstallSources, onProgress: (message: string) => void): Promise<InitializationResult>;
   disconnect(): void;
@@ -255,6 +379,7 @@ interface DeviceInstallationDependencies {
   connect(credentials: DeviceCredentials): Promise<DeviceXapi>;
   verify(xapi: DeviceXapi, expectedSerial: string): Promise<VerifiedDevice>;
   fetch(xapi: DeviceXapi, macroName: string): Promise<string>;
+  discover(xapi: DeviceXapi): Promise<DiscoveredCameraSource[]>;
   install(
     xapi: DeviceXapi,
     sources: InstallSources,
@@ -266,6 +391,7 @@ const defaultDeviceInstallationDependencies: DeviceInstallationDependencies = {
   connect: connectToDevice,
   verify: verifyConnectedDevice,
   fetch: fetchMacroSource,
+  discover: discoverCameraSources,
   install: installAndVerify,
 };
 
@@ -319,6 +445,10 @@ class RoomOsDeviceInstallationSession implements DeviceInstallationSession {
 
   async fetchInstalledMacro(macroName: string): Promise<string> {
     return this.dependencies.fetch(this.requireDevice(), macroName);
+  }
+
+  async discoverCameraSources(): Promise<DiscoveredCameraSource[]> {
+    return this.dependencies.discover(this.requireDevice());
   }
 
   async recheck(): Promise<DeviceInstallationState> {

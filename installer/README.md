@@ -2,7 +2,7 @@
 
 This Vite application has three jobs:
 
-1. configure one to four cameras and all 16 physical buttons;
+1. configure one to four cameras manually or from read-only RoomOS camera discovery, and assign all 16 physical buttons;
 2. recover, generate, or directly install a configured RoomOS macro;
 3. generate a configuration-specific, single-page PDF operator guide for download.
 
@@ -11,7 +11,7 @@ and Review and Installation. Introduction offers a fresh configuration, local
 macro import, or a verified device fetch. It also selects the base macro Release;
 the latest compatible published stable Release is selected on every fresh page
 load, and that Release's manifest determines the exact dependency Release. The
-selection lasts only for the current in-memory workflow. Macro Settings includes camera sources,
+selection lasts only for the current in-memory workflow. Macro Settings includes configured and discovered camera sources,
 independent PAN/TILT and zoom ramp speeds, and their shared Precision Mode divisor.
 The Button Assignments page reads left to right while its complete action key
 opens in a modal. The workflow rail and browser history allow any visited page to
@@ -124,7 +124,7 @@ Before installation, the page:
 - keeps every install or update step visible in a progress modal through readiness, timeout, or failure;
 - warns that the macro runtime restart affects every active macro.
 
-After the same verification, the operator may fetch the installed solution macro with a read-only `Macros Macro Get` command. Local uploads and fetched macros are parsed as data without executing their source.
+After the same verification, the operator may fetch the installed solution macro with a read-only `Macros Macro Get` command. Macro Settings can instead read `Video Input Connector` configuration and `Cameras` status to discover camera sources without fetching a macro or writing any RoomOS input configuration. Local uploads and fetched macros are parsed as data without executing their source.
 
 The browser remembers only the device address and administrator username between
 page loads. Passwords and expected serial numbers are not cached.

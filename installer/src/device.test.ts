@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createDeviceInstallationSession, type DeviceXapi, type VerifiedDevice } from './device';
+import {
+  createDeviceInstallationSession,
+  discoverCameraSourcesFromResponses,
+  type DeviceXapi,
+  type VerifiedDevice,
+} from './device';
 
 const verifiedDevice: VerifiedDevice = {
   productPlatform: 'Room Kit Pro',
@@ -15,6 +20,91 @@ const credentials = {
 };
 
 describe('device installation', () => {
+  it('discovers camera connectors and joins camera status by CameraId', () => {
+    const result = discoverCameraSourcesFromResponses(
+      [{
+        id: '2',
+        InputSourceType: 'camera',
+        Name: 'Presenter',
+        CameraControl: { CameraId: '1', Mode: 'On' },
+      }, {
+        id: '1',
+        InputSourceType: 'PC',
+        Name: 'Laptop',
+        CameraControl: { CameraId: '2', Mode: 'Off' },
+      }, {
+        id: '4',
+        InputSourceType: 'camera',
+        Name: '',
+        CameraControl: { CameraId: '4', Mode: 'Off' },
+      }],
+      { Camera: [
+        { id: '1', Connected: 'True', Model: 'Quad Camera' },
+        { id: '4', Connected: 'False' },
+      ] },
+    );
+
+    expect(result).toEqual([{
+      ConnectorId: '2',
+      Name: 'Presenter',
+      ControlId: '1',
+      cameraControlMode: 'On',
+      connection: 'connected',
+      model: 'Quad Camera',
+    }, {
+      ConnectorId: '4',
+      Name: '',
+      ControlId: '4',
+      cameraControlMode: 'Off',
+      connection: 'disconnected',
+      model: undefined,
+    }]);
+  });
+
+  it('accepts singleton wrappers, missing CameraId, and unavailable camera status', () => {
+    const connector = {
+      Video: { Input: { Connector: {
+        id: 3,
+        InputSourceType: { Value: 'camera' },
+        Name: { Value: 'USB Camera' },
+        CameraControl: { Mode: { Value: 'Off' } },
+      } } },
+    };
+
+    expect(discoverCameraSourcesFromResponses(connector, undefined, false)).toEqual([{
+      ConnectorId: '3',
+      Name: 'USB Camera',
+      ControlId: null,
+      cameraControlMode: 'Off',
+      connection: 'unavailable',
+      model: undefined,
+    }]);
+  });
+
+  it('returns configuration-derived cameras when the Cameras status read fails', async () => {
+    const xapi = {
+      config: { get: vi.fn(async () => [{
+        id: '5',
+        InputSourceType: 'camera',
+        Name: 'Third Party',
+        CameraControl: { CameraId: '5', Mode: 'Off' },
+      }]) },
+      status: { get: vi.fn(async () => { throw new Error('status unavailable'); }) },
+      close: vi.fn(),
+    } as unknown as DeviceXapi;
+    const session = createDeviceInstallationSession({
+      connect: vi.fn(async () => xapi),
+      verify: vi.fn(async () => verifiedDevice),
+    });
+    await session.connect(credentials, 'SERIAL-1');
+
+    await expect(session.discoverCameraSources()).resolves.toMatchObject([{
+      ConnectorId: '5',
+      ControlId: '5',
+      connection: 'unavailable',
+    }]);
+  });
+
   it('reads an installed macro through the verified device socket', async () => {
     const command = vi.fn(async () => ({
       Macro: {
