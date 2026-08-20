@@ -81,6 +81,9 @@ _Avoid_: Device socket, socket connection
 
 ## Development and deployment
 
+**Macro Version**:
+The semantic version in the repository macro's aligned `Version:` header. Every change to the macro file must also change the Macro Version; backward-compatible new behavior increments the minor version, fixes increment the patch version, and breaking changes increment the major version.
+
 **RoomOS validation target**: `parent-2-prog2`
 
 Use the exact `parent-2-prog2` alias through the shared RoomOS Socket Workbench
