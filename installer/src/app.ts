@@ -35,8 +35,10 @@ import {
   chooseReleaseTarget,
   createFreshReleaseResolution,
   ingestMacroSource,
+  isLocalDevelopmentHost,
   latestCatalogRelease,
   loadInstallerRelease,
+  loadLocalDevelopmentSources,
   loadReleaseCatalog,
   migrateToLatestRelease,
   type InstallerSources,
@@ -58,6 +60,7 @@ const CISCO_SAMPLE_CODE_LICENSE_URL = 'https://developer.cisco.com/docs/licenses
 const PROJECT_README_URL = `${PROJECT_REPOSITORY_URL}#readme`;
 const THEME_STORAGE_KEY = 'joystick-configurator-theme';
 const DEVICE_IDENTITY_STORAGE_KEY = 'joystick-configurator-device-identity';
+const LOCAL_DEVELOPMENT_TARGET = 'local-development';
 
 const CONFIGURATION_DEFINITIONS = {
   projectName: {
@@ -284,6 +287,18 @@ export class ConfiguratorApp {
     return sources;
   }
 
+  private async loadLocalSources(): Promise<InstallerSources> {
+    if (!this.catalog) throw new Error('The installer Release catalog is not available.');
+    if (!isLocalDevelopmentHost(window.location?.hostname ?? '')) {
+      throw new Error('Local development sources are available only on localhost or 127.0.0.1.');
+    }
+    const cached = this.releaseSourceCache.get(LOCAL_DEVELOPMENT_TARGET);
+    if (cached) return cached;
+    const sources = await loadLocalDevelopmentSources(this.catalog);
+    this.releaseSourceCache.set(LOCAL_DEVELOPMENT_TARGET, sources);
+    return sources;
+  }
+
   private hasSupportedTarget(): boolean {
     return Boolean(
       this.releaseResolution?.targetTag &&
@@ -483,6 +498,10 @@ export class ConfiguratorApp {
         </label>`;
     }
     const selectedTag = this.releaseResolution?.targetTag;
+    const localDevelopment = isLocalDevelopmentHost(window.location?.hostname ?? '')
+      ? this.catalog.localDevelopment
+      : undefined;
+    const localSelected = this.sources?.kind === 'local-development';
     const unresolvedLabel = this.releaseResolution?.recognition === 'unavailable'
       ? `Imported macro · ${this.releaseResolution.detectedTag} unavailable`
       : 'Imported macro · Release unknown';
@@ -491,8 +510,9 @@ export class ConfiguratorApp {
         <span>Choose Release</span>
         <select id="base-macro-release" ${this.busy ? 'disabled' : ''}>
           ${selectedTag ? '' : `<option value="" selected disabled>${escapeHtml(unresolvedLabel)}</option>`}
+          ${localDevelopment ? `<option value="${LOCAL_DEVELOPMENT_TARGET}" ${localSelected ? 'selected' : ''}>Local Development · Macro Version ${escapeHtml(localDevelopment.macroVersion)}</option>` : ''}
           ${this.catalog.releases.map((release) => `
-            <option value="${escapeHtml(release.tag)}" ${release.tag === selectedTag ? 'selected' : ''}>${escapeHtml(release.tag)}${release.tag === this.catalog?.latest ? ' · Latest' : ''}</option>`).join('')}
+            <option value="${escapeHtml(release.tag)}" ${!localSelected && release.tag === selectedTag ? 'selected' : ''}>${escapeHtml(release.tag)}${release.tag === this.catalog?.latest ? ' · Latest' : ''}</option>`).join('')}
         </select>
       </label>`;
   }
@@ -505,6 +525,9 @@ export class ConfiguratorApp {
     const dependencies = release.dependencies
       .map((dependency) => `${dependency.fileName} ${dependency.release}`)
       .join(', ');
+    if (this.sources?.kind === 'local-development') {
+      return `<p class="selected-release-summary"><strong>Target:</strong> Local Development <span>· Macro Version ${escapeHtml(release.tag)} · ${escapeHtml(dependencies)}</span></p>`;
+    }
     return `<p class="selected-release-summary"><strong>Target Release:</strong> ${escapeHtml(release.tag)} <span>· ${escapeHtml(dependencies)}</span></p>`;
   }
 
@@ -518,7 +541,10 @@ export class ConfiguratorApp {
     let heading = 'Source release is current';
     let message = `${detected} matches the latest supported Release.`;
 
-    if (resolution.recognition === 'older') {
+    if (this.sources?.kind === 'local-development' && target) {
+      heading = 'Local development target selected';
+      message = `The recovered configuration now uses the working-tree macro (Macro Version ${target}); no device changes were made.`;
+    } else if (resolution.recognition === 'older') {
       sentiment = 'warning';
       heading = 'Source release is older';
       message = target
@@ -739,8 +765,10 @@ export class ConfiguratorApp {
                 <div><dt>ControlId</dt><dd>${source.ControlId === null ? 'Disabled' : escapeHtml(source.ControlId)}</dd></div>
                 <div><dt>Model</dt><dd>${escapeHtml(source.model ?? 'Model unavailable')}</dd></div>
               </dl>
-              ${warnings.length ? `<ul class="camera-discovery-warnings">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>` : ''}
-              <button class="button ${configured ? 'secondary' : 'primary'}" type="button" data-use-discovered-camera="${escapeHtml(source.ConnectorId)}" ${upToDate || atLimit || this.cameraDiscoveryLoading ? 'disabled' : ''}>${atLimit ? 'Four-camera limit reached' : action}</button>
+              <div class="discovered-camera-actions">
+                ${warnings.length ? `<ul class="camera-discovery-warnings">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>` : '<span></span>'}
+                <button class="button ${configured ? 'secondary' : 'primary'}" type="button" data-use-discovered-camera="${escapeHtml(source.ConnectorId)}" ${upToDate || atLimit || this.cameraDiscoveryLoading ? 'disabled' : ''}>${atLimit ? 'Four-camera limit reached' : action}</button>
+              </div>
             </article>`;
         }).join('')}</div>` : ''}
       </aside>`;
@@ -865,8 +893,11 @@ export class ConfiguratorApp {
   }
 
   private renderAboutModal(): string {
-    const macroVersion = this.releaseResolution?.targetTag ?? 'Not selected';
+    const macroVersion = this.sources?.release.tag ?? this.releaseResolution?.targetTag ?? 'Not selected';
     const macroFileName = this.sources?.release.macro.fileName ?? 'Not selected';
+    const selectedSource = this.sources?.kind === 'local-development'
+      ? 'Local Development'
+      : this.releaseResolution?.targetTag ?? 'Not selected';
     const dependencyRelease = this.sources?.release.dependencies
       .map((dependency) => `${dependency.fileName} ${dependency.release}`)
       .join(', ') ?? 'Not selected';
@@ -888,7 +919,7 @@ export class ConfiguratorApp {
               <dl class="about-details">
                 <div><dt>Macro version</dt><dd><code>${escapeHtml(macroVersion)}</code></dd></div>
                 <div><dt>Macro file</dt><dd><code>${escapeHtml(macroFileName)}</code></dd></div>
-                <div><dt>Selected base Release</dt><dd><code>${escapeHtml(macroVersion)}</code></dd></div>
+                <div><dt>Selected source</dt><dd><code>${escapeHtml(selectedSource)}</code></dd></div>
                 <div><dt>Dependency Release</dt><dd><code>${escapeHtml(dependencyRelease)}</code></dd></div>
                 <div><dt>Camera sources</dt><dd>One to four configured sources</dd></div>
                 <div><dt>Production layout</dt><dd>Main with optional Preview</dd></div>
@@ -944,7 +975,7 @@ export class ConfiguratorApp {
           <div class="install-plan-panel">
             <h3>Installation plan</h3>
             <ol class="install-plan">
-              <li><span>1</span><div><strong>${isUpdate ? 'Update' : 'Install'} dependency</strong><code>${escapeHtml(this.sources?.release.dependencies.map((dependency) => dependency.macroName).join(', ') ?? 'Select a supported Release')}</code><small>Saved inactive from the exact dependency Release packaged with the selected base Release.</small></div></li>
+              <li><span>1</span><div><strong>${isUpdate ? 'Update' : 'Install'} dependency</strong><code>${escapeHtml(this.sources?.release.dependencies.map((dependency) => dependency.macroName).join(', ') ?? 'Select a supported Release')}</code><small>Saved inactive from the exact dependency Release packaged with the selected source.</small></div></li>
               <li><span>2</span><div><strong>${isUpdate ? 'Update' : 'Install'} configured macro</strong><code>Joystick_CameraControl_ProductionSwitcher</code><small>Saved and activated with the mapping shown above.</small></div></li>
               <li><span>3</span><div><strong>Restart macro runtime</strong><small>Every active macro on the device restarts. The macro then installs its UI panel.</small></div></li>
             </ol>
@@ -1357,13 +1388,21 @@ export class ConfiguratorApp {
     this.sourceError = '';
     this.render();
     try {
-      const sources = await this.loadReleaseSources(tag);
+      const localDevelopment = tag === LOCAL_DEVELOPMENT_TARGET;
+      const sources = localDevelopment
+        ? await this.loadLocalSources()
+        : await this.loadReleaseSources(tag);
       this.sources = sources;
-      this.releaseResolution = chooseReleaseTarget(previousResolution, this.catalog, sources.release.tag);
+      this.releaseResolution = localDevelopment
+        ? { ...previousResolution, targetTag: sources.release.tag, targetChosenExplicitly: true }
+        : chooseReleaseTarget(previousResolution, this.catalog, sources.release.tag);
       this.configurationError = '';
+      const targetLabel = localDevelopment
+        ? `Local Development (Macro Version ${sources.release.tag})`
+        : sources.release.tag;
       this.configurationMessage = previousResolution.origin === 'fresh'
-        ? `Fresh installations now target ${sources.release.tag}. Your configuration settings were preserved.`
-        : `Migrated the recovered configuration to ${sources.release.tag}. No device changes were made.`;
+        ? `Fresh installations now target ${targetLabel}. Your configuration settings were preserved.`
+        : `Migrated the recovered configuration to ${targetLabel}. No device changes were made.`;
     } catch (error) {
       this.sources = previousSources;
       this.releaseResolution = previousResolution;
@@ -1408,12 +1447,15 @@ export class ConfiguratorApp {
     this.busy = true;
     this.sourceError = '';
     try {
-      this.sources = await this.loadReleaseSources(selectedTag);
+      const sources = this.sources?.kind === 'local-development'
+        ? await this.loadLocalSources()
+        : await this.loadReleaseSources(selectedTag);
+      this.sources = sources;
       this.releaseResolution = {
         origin: 'fresh',
         recognition: 'fresh',
-        targetTag: selectedTag,
-        targetChosenExplicitly: selectedTag !== this.catalog.latest,
+        targetTag: sources.release.tag,
+        targetChosenExplicitly: sources.kind === 'local-development' || sources.release.tag !== this.catalog.latest,
       };
     } catch (error) {
       this.sourceError = error instanceof Error ? error.message : String(error);

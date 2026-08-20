@@ -180,6 +180,7 @@ export async function prepareReleaseCatalog({
   outputDirectory,
   repositoryVersion,
   requireCurrentRelease = false,
+  localDevelopment,
   fetchImpl = fetch,
   token = '',
 }) {
@@ -296,11 +297,90 @@ export async function prepareReleaseCatalog({
     );
   }
 
+  let localDevelopmentEntry;
+  if (localDevelopment) {
+    if (typeof localDevelopment.macroSource !== 'string' || !localDevelopment.macroSource) {
+      throw new Error('Local development macro source must be a non-empty string.');
+    }
+    const manifest = parseSimpleReleaseManifest(localDevelopment.manifest, 'Local development manifest');
+    validateConfigurationMarkers(localDevelopment.macroSource, 'Local development macro');
+    const localMacroPath = ['local-development', manifest.macro].join('/');
+    await mkdir(dirname(resolve(outputDirectory, localMacroPath)), { recursive: true });
+    await writeFile(resolve(outputDirectory, localMacroPath), localDevelopment.macroSource);
+    validateJavaScriptFile(resolve(outputDirectory, localMacroPath), 'Local development macro');
+
+    const dependencies = [];
+    for (const dependency of manifest.dependencies) {
+      const packagedDependency = catalogReleases
+        .flatMap((release) => release.dependencies)
+        .find((candidate) =>
+          candidate.repo === dependency.repo &&
+          candidate.release === dependency.release &&
+          candidate.fileName === dependency.asset);
+      if (packagedDependency) {
+        dependencies.push({ ...packagedDependency });
+        continue;
+      }
+
+      const cacheKey = `${dependency.repo}@${dependency.release}`;
+      let dependencyRelease = dependencyReleaseCache.get(cacheKey);
+      if (!dependencyRelease) {
+        dependencyRelease = await githubJson(
+          fetchImpl,
+          `https://api.github.com/repos/${dependency.repo}/releases/tags/${encodeURIComponent(dependency.release)}`,
+          headers,
+          `${dependency.repo} ${dependency.release}`,
+        );
+        if (dependencyRelease.draft || dependencyRelease.prerelease) {
+          throw new Error(`${dependency.repo} ${dependency.release} must be a published stable Release.`);
+        }
+        dependencyReleaseCache.set(cacheKey, dependencyRelease);
+      }
+      const dependencyLabel = `${dependency.repo} ${dependency.release}`;
+      const dependencyAsset = findExactReleaseAsset(dependencyRelease, dependency.asset, dependencyLabel);
+      const dependencyPath = [
+        'local-development',
+        'dependencies',
+        dependency.repo.replace('/', '--'),
+        dependency.release,
+        dependency.asset,
+      ].join('/');
+      await obtainVerifiedAsset(
+        fetchImpl,
+        dependencyAsset,
+        resolve(outputDirectory, dependencyPath),
+        headers,
+        `${dependencyLabel} ${dependency.asset}`,
+      );
+      validateJavaScriptFile(resolve(outputDirectory, dependencyPath), `${dependencyLabel} ${dependency.asset}`);
+      dependencies.push({
+        repo: dependency.repo,
+        release: dependency.release,
+        fileName: dependency.asset,
+        macroName: macroNameFromAsset(dependency.asset),
+        sha256: githubAssetDigest(dependencyAsset, `${dependencyLabel} ${dependency.asset}`),
+        path: dependencyPath,
+      });
+    }
+
+    localDevelopmentEntry = {
+      macroVersion: repositoryVersion,
+      macro: {
+        fileName: manifest.macro,
+        macroName: BASE_MACRO_NAME,
+        sha256: sha256(localDevelopment.macroSource),
+        path: localMacroPath,
+      },
+      dependencies,
+    };
+  }
+
   const catalog = {
     version: CATALOG_VERSION,
     repositoryVersion,
     latest: latestRelease.tag,
     releases: catalogReleases,
+    ...(localDevelopmentEntry ? { localDevelopment: localDevelopmentEntry } : {}),
   };
   await mkdir(outputDirectory, { recursive: true });
   await writeFile(resolve(outputDirectory, 'release-catalog.json'), `${JSON.stringify(catalog, null, 2)}\n`);

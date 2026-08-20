@@ -60,6 +60,19 @@ describe('Release catalog preparation', () => {
       '/* JOYSTICK_CONFIG_END */',
     ].join('\n');
     const dependencySource = 'export class ThrustmasterInput {}\n';
+    const localMacroSource = [
+      '/**',
+      ' * Version: 2.0.0',
+      ' */',
+      '/* JOYSTICK_CONFIG_START */',
+      'const config = { localDevelopment: true };',
+      '/* JOYSTICK_CONFIG_END */',
+    ].join('\n');
+    const localManifest = {
+      version: 1,
+      macro: 'base.js',
+      dependencies: [{ repo: 'owner/dependency', release: 'v1.0.0', asset: 'dependency.js' }],
+    };
     const manifestSource = `${JSON.stringify({
       version: 1,
       macro: 'base.js',
@@ -99,6 +112,7 @@ describe('Release catalog preparation', () => {
       outputDirectory,
       repositoryVersion: 'v2.0.0',
       requireCurrentRelease: true,
+      localDevelopment: { macroSource: localMacroSource, manifest: localManifest },
       fetchImpl,
     });
 
@@ -111,6 +125,13 @@ describe('Release catalog preparation', () => {
     expect(await readFile(join(outputDirectory, catalog.releases[0].macro.path), 'utf8')).toBe(macroSource);
     expect(await readFile(join(outputDirectory, catalog.releases[0].dependencies[0].path), 'utf8'))
       .toBe(dependencySource);
+    expect(catalog.localDevelopment).toMatchObject({
+      macroVersion: 'v2.0.0',
+      macro: { fileName: 'base.js', macroName: 'Joystick_CameraControl_ProductionSwitcher' },
+      dependencies: [{ repo: 'owner/dependency', release: 'v1.0.0', fileName: 'dependency.js' }],
+    });
+    expect(await readFile(join(outputDirectory, catalog.localDevelopment.macro.path), 'utf8'))
+      .toBe(localMacroSource);
     expect(JSON.parse(await readFile(join(outputDirectory, 'release-catalog.json'), 'utf8')).latest)
       .toBe('v2.0.0');
     expect(downloadCalls).toHaveLength(3);
@@ -121,6 +142,7 @@ describe('Release catalog preparation', () => {
       outputDirectory,
       repositoryVersion: 'v2.0.0',
       requireCurrentRelease: true,
+      localDevelopment: { macroSource: localMacroSource, manifest: localManifest },
       fetchImpl,
     });
     expect(downloadCalls).toEqual([]);

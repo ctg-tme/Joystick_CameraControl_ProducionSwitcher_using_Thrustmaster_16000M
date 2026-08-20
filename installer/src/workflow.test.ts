@@ -264,6 +264,8 @@ describe('configurator workflow presentation', () => {
     expect(appSource).not.toContain('<span>Base macro release</span>');
     expect(appSource).not.toContain('base-macro-release-help');
     expect(appSource).not.toContain('The selected base Release determines its exact dependency Release.');
+    expect(appSource).toContain('Local Development · Macro Version');
+    expect(appSource).toContain("isLocalDevelopmentHost(window.location?.hostname ?? '')");
     expect(appSource).toContain('Imported macro · Release unknown');
     expect(appSource).toContain('Migrate to latest release (${escapeHtml(catalog.latest)})');
     expect(appSource).toContain('const hasSupportedTarget = this.hasSupportedTarget();');
@@ -294,10 +296,10 @@ describe('configurator workflow presentation', () => {
       source.indexOf('private renderOutput()'),
     );
 
-    expect(aboutSource).toContain("const macroVersion = this.releaseResolution?.targetTag ?? 'Not selected';");
+    expect(aboutSource).toContain("const macroVersion = this.sources?.release.tag ?? this.releaseResolution?.targetTag ?? 'Not selected';");
     expect(aboutSource).toContain('<dt>Macro version</dt>');
     expect(aboutSource).toContain('<dt>Macro file</dt>');
-    expect(aboutSource).toContain('<dt>Selected base Release</dt>');
+    expect(aboutSource).toContain('<dt>Selected source</dt>');
     expect(aboutSource).toContain('<dt>Dependency Release</dt>');
     expect(aboutSource).toContain('<dt>Camera sources</dt>');
     expect(aboutSource).toContain('<p class="about-product-model">${JOYSTICK_MODEL}</p>');

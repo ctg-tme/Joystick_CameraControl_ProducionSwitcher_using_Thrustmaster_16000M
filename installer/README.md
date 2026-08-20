@@ -50,6 +50,9 @@ mocked GitHub metadata and asset responses instead of live network calls. Asset 
 - resolves each dependency from its exact repository, Release tag, and asset name;
 - packages verified base/dependency pairs under ignored, versioned
   `public/assets/releases` paths and writes `release-catalog.json`;
+- packages the repository-root macro as a local-development source during
+  non-production preparation, paired with the exact dependency declared in the
+  repository-root `release-manifest.json`;
 - reuses a packaged download only while its digest still matches the GitHub digest;
 - copies the joystick diagram into ignored `public/assets`;
 - reuses the README's InfoComm live-demo image in ignored `public/assets`;
@@ -58,8 +61,16 @@ Asset preparation fails instead of falling back to checkout bytes, a branch URL,
 an unverified download, or an external CORS proxy. A production build also
 requires the repository-root macro's `Version:` header to match the latest
 compatible published Release, while packaging the verified Release asset rather
-than the checkout copy. The browser continues generating its configuration-
+than the checkout copy. Production preparation removes the local-development
+asset and catalog entry. The browser continues generating its configuration-
 specific PDF guide; released PDF assets are not downloaded or packaged.
+
+When the installer is served from `localhost` or `127.0.0.1`, **Choose Release**
+also includes **Local Development · Macro Version vX.Y.Z**. Selecting it uses the
+working-tree `Joystick_CameraControl_ProductionSwitcher.js` and shows the Version
+detected from its header while keeping the manifest-pinned dependency Release.
+Run `npm run prepare:assets` after editing the root macro if the Vite server is
+already running; starting `npm run dev` performs that preparation automatically.
 
 ## Release manifest and publication
 
@@ -124,7 +135,7 @@ Before installation, the page:
 - keeps every install or update step visible in a progress modal through readiness, timeout, or failure;
 - warns that the macro runtime restart affects every active macro.
 
-After the same verification, the operator may fetch the installed solution macro with a read-only `Macros Macro Get` command. Macro Settings can instead read `Video Input Connector` configuration and `Cameras` status to discover camera sources without fetching a macro or writing any RoomOS input configuration. Local uploads and fetched macros are parsed as data without executing their source.
+After the same verification, the operator may fetch the installed solution macro with a read-only `Macros Macro Get` command. Macro Settings can instead read `Video Input Connector` configuration, `Cameras` status, and video-input connector status to discover camera sources without fetching a macro or writing any RoomOS input configuration. Camera status is joined by CameraId first; connector status provides the connection fallback for Ethernet and video-only inputs that have no matching CameraId. Local uploads and fetched macros are parsed as data without executing their source.
 
 The browser remembers only the device address and administrator username between
 page loads. Passwords and expected serial numbers are not cached.

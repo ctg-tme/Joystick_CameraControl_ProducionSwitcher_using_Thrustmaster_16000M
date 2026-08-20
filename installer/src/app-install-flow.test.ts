@@ -38,6 +38,7 @@ const catalog: ReleaseCatalog = {
 };
 
 const installerSources: InstallerSources = {
+  kind: 'release',
   release: catalog.releases[0],
   macroTemplate: [
     '/* JOYSTICK_CONFIG_START */',

@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { generateConfiguredMacro } from './config';
 import { createDefaultState } from './model';
 import {
@@ -7,6 +8,8 @@ import {
   createFreshReleaseResolution,
   detectMacroReleaseVersion,
   ingestMacroSource,
+  isLocalDevelopmentHost,
+  loadLocalDevelopmentSources,
   migrateToLatestRelease,
   parseReleaseCatalog,
   type ReleaseCatalog,
@@ -41,6 +44,23 @@ const catalog: ReleaseCatalog = parseReleaseCatalog({
   repositoryVersion: 'v2.0.0',
   latest: 'v2.0.0',
   releases: [release('v2.0.0', 'v1.0.0'), release('v1.5.0', 'v0.9.0')],
+  localDevelopment: {
+    macroVersion: 'v2.0.0',
+    macro: {
+      fileName: 'Joystick_CameraControl_ProductionSwitcher.js',
+      macroName: 'Joystick_CameraControl_ProductionSwitcher',
+      sha256: digest,
+      path: 'local-development/Joystick_CameraControl_ProductionSwitcher.js',
+    },
+    dependencies: [{
+      repo: 'ctg-tme/Thrustmaster_16000M-InputDevice-Class',
+      release: 'v1.0.0',
+      fileName: 'Thrustmaster_16000M-Class.js',
+      macroName: 'Thrustmaster_16000M-Class',
+      sha256: digest,
+      path: 'releases/v2.0.0/dependencies/input/v1.0.0/Thrustmaster_16000M-Class.js',
+    }],
+  },
 });
 
 function macro(versionLine?: string): string {
@@ -64,6 +84,58 @@ function macro(versionLine?: string): string {
 }
 
 describe('Release-aware macro ingestion', () => {
+  it('offers local development only on the requested loopback hosts', () => {
+    expect(isLocalDevelopmentHost('localhost')).toBe(true);
+    expect(isLocalDevelopmentHost('127.0.0.1')).toBe(true);
+    expect(isLocalDevelopmentHost('0.0.0.0')).toBe(false);
+    expect(isLocalDevelopmentHost('installer.example.test')).toBe(false);
+  });
+
+  it('loads the packaged working-tree macro and its exact dependency pair', async () => {
+    const localMacro = macro(' * Version: 2.0.0');
+    const localDependency = 'export class LocalDependency {}\n';
+    const localCatalog = parseReleaseCatalog({
+      version: 1,
+      repositoryVersion: 'v2.0.0',
+      latest: 'v2.0.0',
+      releases: [release('v2.0.0', 'v1.0.0')],
+      localDevelopment: {
+        macroVersion: 'v2.0.0',
+        macro: {
+          fileName: 'Joystick_CameraControl_ProductionSwitcher.js',
+          macroName: 'Joystick_CameraControl_ProductionSwitcher',
+          sha256: createHash('sha256').update(localMacro).digest('hex'),
+          path: 'local-development/Joystick_CameraControl_ProductionSwitcher.js',
+        },
+        dependencies: [{
+          repo: 'ctg-tme/Thrustmaster_16000M-InputDevice-Class',
+          release: 'v1.0.0',
+          fileName: 'Thrustmaster_16000M-Class.js',
+          macroName: 'Thrustmaster_16000M-Class',
+          sha256: createHash('sha256').update(localDependency).digest('hex'),
+          path: 'local-development/dependencies/Thrustmaster_16000M-Class.js',
+        }],
+      },
+    });
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const path = String(url);
+      if (path.endsWith('/Joystick_CameraControl_ProductionSwitcher.js')) return new Response(localMacro);
+      if (path.endsWith('/Thrustmaster_16000M-Class.js')) return new Response(localDependency);
+      return new Response('Not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const sources = await loadLocalDevelopmentSources(localCatalog);
+      expect(sources.kind).toBe('local-development');
+      expect(sources.release.tag).toBe('v2.0.0');
+      expect(sources.macroTemplate).toBe(localMacro);
+      expect(sources.dependencies[0]).toMatchObject({ source: localDependency });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('detects the aligned current header and normalizes an optional leading v', () => {
     expect(detectMacroReleaseVersion(macro(' * Version:                 2.0.0'))).toBe('v2.0.0');
     expect(detectMacroReleaseVersion(macro(' * Version: v1.5.0'))).toBe('v1.5.0');
@@ -152,6 +224,8 @@ describe('Release-aware macro ingestion', () => {
     const appSource = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
     expect(appSource).not.toContain('localStorage.setItem(BASE_MACRO');
     expect(appSource).toContain('createFreshReleaseResolution(this.catalog)');
+    expect(appSource).toContain('Local Development · Macro Version');
+    expect(appSource).toContain("isLocalDevelopmentHost(window.location?.hostname ?? '')");
   });
 
   it('routes upload and device fetch through the same ingestion function', async () => {

@@ -21,11 +21,18 @@ export interface ReleaseCatalogEntry {
   dependencies: ReleaseCatalogDependency[];
 }
 
+export interface LocalDevelopmentCatalogEntry {
+  macroVersion: string;
+  macro: ReleaseCatalogAsset;
+  dependencies: ReleaseCatalogDependency[];
+}
+
 export interface ReleaseCatalog {
   version: 1;
   repositoryVersion: string;
   latest: string;
   releases: ReleaseCatalogEntry[];
+  localDevelopment?: LocalDevelopmentCatalogEntry;
 }
 
 export interface InstallerDependencySource {
@@ -34,6 +41,7 @@ export interface InstallerDependencySource {
 }
 
 export interface InstallerSources {
+  kind: 'release' | 'local-development';
   release: ReleaseCatalogEntry;
   macroTemplate: string;
   dependencies: InstallerDependencySource[];
@@ -91,6 +99,21 @@ function parseCatalogAsset(value: unknown, label: string): ReleaseCatalogAsset {
   };
 }
 
+function parseCatalogDependencies(value: unknown, label: string): ReleaseCatalogDependency[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${label} must contain at least one dependency.`);
+  }
+  return value.map((dependencyCandidate, dependencyIndex) => {
+    const dependencyLabel = `${label} dependency ${dependencyIndex + 1}`;
+    const dependency = requireObject(dependencyCandidate, dependencyLabel);
+    return {
+      ...parseCatalogAsset(dependency, dependencyLabel),
+      repo: requireString(dependency.repo, `${dependencyLabel} repo`),
+      release: requireString(dependency.release, `${dependencyLabel} release`),
+    };
+  });
+}
+
 export function normalizeReleaseTag(value: string): string | undefined {
   const match = value.trim().match(/^v?(\d+\.\d+\.\d+)$/i);
   return match ? `v${match[1]}` : undefined;
@@ -109,25 +132,12 @@ export function parseReleaseCatalog(value: unknown): ReleaseCatalog {
     const release = requireObject(candidate, `Release catalog entry ${index + 1}`);
     const tag = normalizeReleaseTag(requireString(release.tag, `Release catalog entry ${index + 1} tag`));
     if (!tag) throw new Error(`Release catalog entry ${index + 1} tag must be semantic.`);
-    if (!Array.isArray(release.dependencies) || release.dependencies.length === 0) {
-      throw new Error(`Release catalog entry ${tag} must contain at least one dependency.`);
-    }
     return {
       tag,
       publishedAt: requireString(release.publishedAt, `Release catalog entry ${tag} publishedAt`),
       releaseUrl: requireString(release.releaseUrl, `Release catalog entry ${tag} releaseUrl`),
       macro: parseCatalogAsset(release.macro, `Release catalog entry ${tag} macro`),
-      dependencies: release.dependencies.map((dependencyCandidate, dependencyIndex) => {
-        const dependency = requireObject(
-          dependencyCandidate,
-          `Release catalog entry ${tag} dependency ${dependencyIndex + 1}`,
-        );
-        return {
-          ...parseCatalogAsset(dependency, `Release catalog entry ${tag} dependency ${dependencyIndex + 1}`),
-          repo: requireString(dependency.repo, `Release catalog entry ${tag} dependency ${dependencyIndex + 1} repo`),
-          release: requireString(dependency.release, `Release catalog entry ${tag} dependency ${dependencyIndex + 1} release`),
-        };
-      }),
+      dependencies: parseCatalogDependencies(release.dependencies, `Release catalog entry ${tag}`),
     };
   });
   if (new Set(releases.map((release) => release.tag)).size !== releases.length) {
@@ -136,7 +146,26 @@ export function parseReleaseCatalog(value: unknown): ReleaseCatalog {
   if (!releases.some((release) => release.tag === latest)) {
     throw new Error(`Release catalog latest tag ${latest} is not packaged.`);
   }
-  return { version: 1, repositoryVersion, latest, releases };
+  let localDevelopment: LocalDevelopmentCatalogEntry | undefined;
+  if (catalog.localDevelopment !== undefined) {
+    const local = requireObject(catalog.localDevelopment, 'Local development catalog entry');
+    const macroVersion = normalizeReleaseTag(
+      requireString(local.macroVersion, 'Local development catalog entry macroVersion'),
+    );
+    if (!macroVersion) throw new Error('Local development macroVersion must be semantic.');
+    localDevelopment = {
+      macroVersion,
+      macro: parseCatalogAsset(local.macro, 'Local development catalog entry macro'),
+      dependencies: parseCatalogDependencies(local.dependencies, 'Local development catalog entry'),
+    };
+  }
+  return {
+    version: 1,
+    repositoryVersion,
+    latest,
+    releases,
+    ...(localDevelopment ? { localDevelopment } : {}),
+  };
 }
 
 async function fetchText(url: string, label: string): Promise<string> {
@@ -188,6 +217,7 @@ export async function loadInstallerRelease(
       loadVerifiedText(dependency, `${dependency.repo} ${dependency.release} dependency`)),
   ]);
   return {
+    kind: 'release',
     release,
     macroTemplate,
     dependencies: release.dependencies.map((manifest, index) => ({
@@ -195,6 +225,36 @@ export async function loadInstallerRelease(
       source: dependencySources[index],
     })),
   };
+}
+
+export async function loadLocalDevelopmentSources(catalog: ReleaseCatalog): Promise<InstallerSources> {
+  const local = catalog.localDevelopment;
+  if (!local) throw new Error('Local development sources are not packaged in this installer.');
+  const release: ReleaseCatalogEntry = {
+    tag: local.macroVersion,
+    publishedAt: '',
+    releaseUrl: '',
+    macro: local.macro,
+    dependencies: local.dependencies,
+  };
+  const [macroTemplate, ...dependencySources] = await Promise.all([
+    loadVerifiedText(local.macro, `Local development macro ${local.macroVersion}`),
+    ...local.dependencies.map((dependency) =>
+      loadVerifiedText(dependency, `${dependency.repo} ${dependency.release} dependency`)),
+  ]);
+  return {
+    kind: 'local-development',
+    release,
+    macroTemplate,
+    dependencies: local.dependencies.map((manifest, index) => ({
+      manifest,
+      source: dependencySources[index],
+    })),
+  };
+}
+
+export function isLocalDevelopmentHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
 }
 
 export function detectMacroReleaseVersion(source: string): string | undefined {
