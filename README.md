@@ -1,278 +1,237 @@
 # Joystick Camera Control Production Switcher
 
-A standalone RoomOS solution that uses a Thrustmaster T.16000M joystick to stage, control, and swap up to four camera sources between Main and Preview.
+Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a simple Main/Preview production workflow without a separate control computer.
 
-The solution includes:
+![An operator controlling a camera with the Thrustmaster T.16000M at InfoComm 2026](docs/images/infocomm-2026-joystick-demo.png)
 
-- `Joystick_CameraControl_ProductionSwitcher.js` — the macro and its self-installed `Joystick Controls` UI panel.
-- `installer/` — the browser configurator, device installer, and downloadable single-page PDF operator guide.
-- `Guides/thrustmaster16000m-camera-guide.html` — the original extracted control reference.
-- `CONTEXT.md` — canonical operator terminology.
+_The joystick camera-control experience demonstrated at InfoComm 2026._
 
-The macro is extracted from the InfoComm 2026 demo without the demo's unrelated lighting, web, presentation, video-composition, standby, analytics, or HTTP-client behavior.
+## What this solution offers
 
-## Configure and install in the browser
+- **Direct camera control** — pan, tilt, and zoom a Cisco camera from a USB joystick connected to the RoomOS device.
+- **Production switching** — send a camera directly to **Main** (live) or stage it on **Preview** before swapping it to Main.
+- **Up to four camera sources** — give each camera a readable name and a dedicated selection button.
+- **Custom RoomOS controls** — enable or disable joystick operation, match the joystick's handedness switch, and check the live operating state from the touch controller.
+- **Configurable button actions** — assign camera selection, Main/Preview control, source swapping, Precision Mode, and selfview actions to the 16 physical buttons.
+- **Operator safeguards** — joystick control starts disabled, automatic tracking is suspended before manual control begins, and unexpected SpeakerTrack activation produces an on-screen warning.
+- **Printable room guide** — the optional Web Tool can generate a one-page operator guide for the room's exact configuration.
 
-The browser configurator is the recommended path. Its four-page workflow can be revisited in any order after making changes:
+In this project, **Main** is the camera source currently live to the audience. **Preview** is the camera staged on a dedicated local display. The **Controlled Camera** is the physical camera that responds to joystick movement; it can currently occupy either role.
 
-1. Review the requirements, then choose Fresh Installation, Start from Macro, or Fetch Macro from Device.
-2. Set the macro behavior and configure up to four camera sources. A readable camera `ButtonAction`, such as `SelectCamera1`, is generated from each name.
-3. Assign every physical button in a left-to-right control, selection, and result layout. Open the built-in and configured-camera action definitions in a modal when needed. Default assignments are marked and can be restored individually or as a complete set.
-4. Review the Config object, then download the macro, install or update it directly, or download the configured PDF operator guide.
+## How an operator uses it
 
-To resume earlier work, upload a previously generated macro or fetch the installed macro after connecting and verifying the exact device. Every connection starts in a secure modal without leaving the current workflow page. The configurator reads only the marked configuration object and never executes imported macro code.
+1. Open the **Joystick Controls** panel on the RoomOS touch controller.
+2. Match **Left-handed** or **Right-handed** to the physical switch on the bottom of the joystick.
+3. Select **Enabled**. If configured, the default camera is placed on Main.
+4. Choose whether the joystick should control the camera on **Main** or **Preview**.
+5. Press a configured camera button to place that camera in the selected role and take control of it.
+6. Pan, tilt, and zoom the camera. Hold **Precision Mode** when a slower movement is needed for fine framing.
+7. If Preview is enabled, use **Swap** to exchange Main and Preview. Joystick control follows the same physical camera into its new role.
 
-The installer:
+Select **Disabled** when finished. Disabling stops joystick input and clears the Preview matrix output, but it does not change Main or restore camera-tracking modes. Closing the panel by itself does not disable the joystick.
 
-- opens device connection and verification in a modal while preserving the current workflow page;
-- verifies the expected serial number, refreshes active-call status in a confirmation prompt, and blocks installation during an active call;
-- shows the complete install or update sequence in a modal until the macro reports ready, fails, or times out;
-- loads the Thrustmaster class from its separate repository and saves it inactive;
-- saves and activates the configured solution macro;
-- restarts the RoomOS macro runtime once, which restarts every active macro;
-- waits for the solution macro to report that joystick initialization is ready.
+## Feature breakdown
 
-Fetching an installed configuration uses `Macros Macro Get` on the already verified connection. It is read-only and does not restart the macro runtime.
+### Custom RoomOS interface
 
-Refreshing warns before discarding workflow progress and returns to Introduction. The browser caches the device address and administrator username only; passwords and expected serial numbers are not cached. The observed device serial is used only for comparison and is not displayed or logged.
+The macro installs and maintains its own **Joystick Controls** panel. The controls page provides the two operator settings that must be immediately accessible in the room:
 
-### Operator guide PDF
+- **Joystick controls** — starts `Disabled`; select `Enabled` to accept joystick input.
+- **Handedness** — matches the left/right switch on the underside of the joystick and immediately remaps the base buttons.
 
-The Review page generates a real, configuration-specific PDF for printing and keeping in the room. It is exactly one US Letter landscape page and includes the current project and room identity, handedness, Preview status, all 16 physical button assignments, configured camera names, motion settings, the joystick diagram, and the RoomOS enablement steps. Preview-Off guides clearly mark Preview and Swap actions unavailable and use a reduced workflow that does not instruct the operator to use them.
+![The Joystick Controls page showing enablement and handedness settings](docs/images/joystick-controls-panel.png)
 
-The PDF is generated locally in the browser with embedded source assets. It has no remote image, font, print-dialog, or server-generation dependency.
+Enabling joystick control sets SpeakerTrack behavior to Manual and attempts to deactivate SpeakerTrack, Closeup, Frames, and PresenterTrack before accepting input. Unsupported tracking commands are logged as warnings and do not block joystick operation. Disabling the joystick does not restore the previous tracking state; use the normal Camera Control interface to re-enable tracking.
 
-### Hardware prerequisites
+### Live status
 
-- a Cisco codec or collaboration device whose RoomOS release supports the InputDevice Joystick APIs;
-- a Thrustmaster T.16000M USB joystick;
+The panel's **Status** page gives the operator an at-a-glance view of:
+
+- whether joystick controls are enabled;
+- the current control method: `Live` for Main or `Preview` for the staged source;
+- the camera currently assigned to Main;
+- the camera currently assigned to Preview, or `Disabled` when Preview is off.
+
+![The Joystick Controls Status page showing control method, Main, and Preview](docs/images/joystick-status-panel.png)
+
+### Joystick movement
+
+The three camera-motion controls are fixed:
+
+| Physical control | Camera operation |
+|---|---|
+| Main stick forward/back | Tilt |
+| Main stick twist | Pan |
+| Hat/mini-stick up/down | Zoom |
+
+The main stick's left/right roll and the base throttle slider are not used. Camera movement stops when the active control returns to center, the Controlled Camera changes, handedness changes, or joystick control is disabled.
+
+### Available button actions
+
+Every physical button can be assigned one of these actions in `config.controls`:
+
+| Button action | Operator result |
+|---|---|
+| `PrecisionMode` | Reduces pan, tilt, and zoom speed while the button is held. |
+| `SwapMainPreview` | Exchanges Main and Preview while control follows the same physical camera into its new role. |
+| `ControlMain` | Makes the camera on Main the Controlled Camera; the Status page reports `Live`. |
+| `ControlPreview` | Makes the staged Preview camera the Controlled Camera. |
+| `SelfviewWindowed` | Shows selfview as an inset on the first monitor. |
+| `SelfviewFullscreen` | Shows fullscreen selfview on the first monitor. |
+| `SelfviewOff` | Hides selfview. |
+| A camera action such as `SelectCamera1` | Places that camera on the currently controlled role and transfers joystick control to it. |
+| `''`, `null`, or `undefined` | No Action. |
+
+Preview actions safely do nothing when `config.previewDisplay.mode` is `Off`.
+
+### Default button layout
+
+Guide numbers are stable physical references. The left/right logical IDs account for the handedness switch; the action remains at the same physical guide-button position.
+
+| Guide button | Physical control | Right-handed logical ID | Left-handed logical ID | Default action |
+|---:|---|---|---|---|
+| 1 | Trigger | `STICK_TRIGGER` | `STICK_TRIGGER` | Precision Mode |
+| 2 | Lower center stick button | `STICK_SOUTH` | `STICK_SOUTH` | No Action |
+| 3 | Left stick-side button | `STICK_EAST` | `STICK_EAST` | Swap Main/Preview |
+| 4 | Right stick-side button | `STICK_WEST` | `STICK_WEST` | Swap Main/Preview |
+| 5 | Left base top button | `BASE_LEFT_1` | `BASE_RIGHT_3` | Control Main |
+| 6 | Left base upper-middle button | `BASE_LEFT_2` | `BASE_RIGHT_2` | Selfview windowed |
+| 7 | Left base middle button | `BASE_LEFT_3` | `BASE_RIGHT_1` | Selfview fullscreen |
+| 8 | Left base lower button | `BASE_LEFT_6` | `BASE_RIGHT_4` | No Action |
+| 9 | Left base lower-middle button | `BASE_LEFT_5` | `BASE_RIGHT_5` | Selfview off |
+| 10 | Left base inner button | `BASE_LEFT_4` | `BASE_RIGHT_6` | Control Preview |
+| 11 | Right base top button | `BASE_RIGHT_3` | `BASE_LEFT_1` | Select Camera 2 |
+| 12 | Right base upper-middle button | `BASE_RIGHT_2` | `BASE_LEFT_2` | Select Camera 1 |
+| 13 | Right base inner-top button | `BASE_RIGHT_1` | `BASE_LEFT_3` | No Action |
+| 14 | Right base inner-lower button | `BASE_RIGHT_4` | `BASE_LEFT_6` | No Action |
+| 15 | Right base lower-middle button | `BASE_RIGHT_5` | `BASE_LEFT_5` | Select Camera 3 |
+| 16 | Right base lower button | `BASE_RIGHT_6` | `BASE_LEFT_4` | Select Camera 4 |
+
+The original numbered control reference is available in [Guides/thrustmaster16000m-camera-guide.html](Guides/thrustmaster16000m-camera-guide.html).
+
+## Requirements and limitations
+
+- A Cisco codec or collaboration device running a RoomOS release that supports the InputDevice Joystick API.
+- RoomOS administrator access and access to the Macro Editor.
+- A Thrustmaster T.16000M USB joystick connected to a supported USB port on the device.
+- One to four camera video inputs.
 - Cisco certified cameras for joystick pan, tilt, and zoom control.
+- A free display output when using Preview. Preview is not recommended when three displays are already active.
 
-USB and uncertified cameras may still be visible and switched as video sources, but this solution does not provide joystick PTZ for them. Additional integration or macro development is required.
+USB and uncertified cameras may still be available as switchable video sources, but this solution does not provide joystick PTZ control for them. Additional integration or macro development is required.
 
 Resources:
 
 - [Thrustmaster T.16000M documentation](https://support.thrustmaster.com/en/product/t16000mfcs-en/)
 - [T.16000M InputDevice class](https://github.com/ctg-tme/Thrustmaster_16000M-InputDevice-Class)
 
-To run locally:
+## Configure the solution macro manually
 
-```sh
-cd installer
-npm install
-npm run dev
-```
+Open [Joystick_CameraControl_ProductionSwitcher.js](Joystick_CameraControl_ProductionSwitcher.js) in a text editor and find the `config` object between the `JOYSTICK_CONFIG_START` and `JOYSTICK_CONFIG_END` markers. Only edit the configuration inside those markers.
 
-Open `http://127.0.0.1:5177/`.
+### Identify each camera
 
-For GitHub Pages, enable Pages with **GitHub Actions** as the source. `.github/workflows/deploy-installer.yml` tests and builds the installer on changes to `main`, then publishes `installer/dist`.
+For every source, collect:
 
-## External class dependency
+- a short operator-facing camera name;
+- the RoomOS video input `ConnectorId` used to put the source on Main or Preview;
+- the RoomOS camera `ControlId` that receives pan, tilt, and zoom commands.
 
-The Thrustmaster input-device class remains a separate project and is not copied or committed here:
-
-- [Thrustmaster_16000M-InputDevice-Class](https://github.com/ctg-tme/Thrustmaster_16000M-InputDevice-Class)
-
-The macro expects the exact module name `Thrustmaster_16000M-Class`:
-
-```js
-import { ThrustMaster16000M_JoyStick } from './Thrustmaster_16000M-Class';
-```
-
-The browser installer retrieves that source at install time. For a manual installation, first install `Thrustmaster_16000M-Class.js` with the exact macro name `Thrustmaster_16000M-Class`, then import the solution macro.
-
-## Configuration model
-
-The editable `config` block is near the top of the macro and is bounded by `JOYSTICK_CONFIG_START` and `JOYSTICK_CONFIG_END` markers.
+`ConnectorId` and `ControlId` are different identifiers even when they happen to use the same number.
 
 ### Configuration reference
 
-| Web installer field | Macro property | Definition |
-|---|---|---|
-| Project name (optional) | `config.documentation.ProjectName` | The project name used for documentation within the macro. It does not affect operation. |
-| Room name (optional) | `config.documentation.RoomName` | The room where the macro will be installed. It is used only for documentation and can help distinguish rooms with different configurations. |
-| Physical handedness switch | `config.joystick.StartingHand` | Updates the macro to match the handedness switch on the bottom of the joystick. If they do not match, the base-button references swap sides. |
-| Set default camera | `config.joystick.SetDefaultCamera` | When `true`, enabling Joystick Controls sets Main to the configured default camera. When `false`, enabling leaves the current Main source unchanged. Defaults to `true`. |
-| Joystick Controls location | `config.userInterface.panelLocation` | Controls where RoomOS makes the Joystick Controls UI available. Accepts `HomeScreen`, `CallControls`, `HomeScreenAndCallControls`, or `ControlPanel`. |
-| Preview display mode | `config.previewDisplay.mode` | Uses the Video Matrix xAPI to reserve a screen output as a local camera Preview display before a source is sent into the call. Enable it only with a free HDMI output; it is not recommended when three displays are actively in use. |
-| Preview display output | `config.previewDisplay.output` | The HDMI output reserved for the local camera Preview display. Choose only a free output; Preview mode is not recommended when three displays are actively in use. |
-| PAN/TILT Ramp Speed | `config.joystick.Camera.PanTiltRampSpeed` | The base speed for camera pan and tilt movement. Not all Cisco cameras respect this setting. |
-| ZOOM Ramp Speed | `config.joystick.Camera.ZoomRampSpeed` | The base speed for camera zoom movement. Not all Cisco cameras respect this setting. |
-| Precision divisor | `config.joystick.Camera.SlowModeDivisor` | Divides the PAN/TILT and ZOOM speeds by this value while the Precision mode button is held. |
-| Camera name | `config.cameras[].Name` | A readable name used in the macro, installer, status display, and generated PDF operator guide. |
-| Video ConnectorId | `config.cameras[].ConnectorId` | The RoomOS video input connector used to put this camera on Main or Preview. |
-| Camera ControlId | `config.cameras[].ControlId` | The RoomOS camera identifier that receives this camera's PAN/TILT and ZOOM commands. |
-| Default camera | `config.joystick.DefaultCameraAction` | The camera used for the macro's default Main, Preview, and joystick-control assignments. `SetDefaultCamera` determines whether enabling Joystick Controls applies it to Main. |
-
-`ButtonAction` is the common vocabulary for anything assignable to a button. It may be:
-
-- a built-in action from the manifest below;
-- a generated camera-selection action from `config.cameras`;
-
-`config.documentation.ProjectName` and `RoomName` preserve the printable identity when the macro is uploaded or fetched back into the configurator. `InstallerUrl` links to the hosted configurator and provides the base URL used to download the Joystick Controls panel icon; `RepositoryUrl` links to this project's source. The panel retains its default Sliders icon if the custom icon cannot be downloaded.
-
-`config.userInterface.panelLocation` accepts `HomeScreen`, `CallControls`, `HomeScreenAndCallControls`, or `ControlPanel`. It defaults to `HomeScreenAndCallControls`. The panel XML does not set `Order`, so RoomOS places it in the next available position.
-
-`config.previewDisplay` defines the local Preview capability:
-
-```js
-previewDisplay: {
-  mode: 'On',
-  output: 2
-}
-```
-
-`mode` accepts `'On'` or `'Off'`. When it is `'Off'`, Preview source selection, Preview camera control, Main/Preview swapping, matrix assignment, and matrix reset do not run. `output` is the video matrix output where the local Preview is shown when the mode is `'On'`.
-
-### Runtime control panel
-
-The self-installed `Joystick Controls` panel has a controls page with two full-width group buttons:
-
-- **Joystick controls** — `Disabled` or `Enabled`. The macro starts disabled. Enabling sets SpeakerTrack behavior to `Manual`, deactivates top-level SpeakerTrack, Closeup, and Frames, and sets PresenterTrack to `Off` before manual joystick control begins. It also sets Main to `DefaultCameraAction` unless `SetDefaultCamera` is `false`; when that option is `false`, the operator's current Main source is left unchanged. It intentionally does not deactivate SpeakerTrack BackgroundMode or ViewLimits. Every tracking command is attempted, but commands that are unavailable or fail on a particular product produce a warning and do not block joystick activation. These commands do not change the device configuration. Disabling joystick control always leaves Main unchanged and does not restore any tracking feature; the user may re-enable tracking from the Camera Control UI. Closing the panel does not change the selection, so panel visibility and joystick operation are independent.
-- **Handedness** — `Left-handed` or `Right-handed`. Changing it immediately remaps the physical guide buttons and the Thrustmaster hardware-code lookup. Match this selection to the physical switch on the bottom of the joystick.
-
-Its **Status** page has separate full-width text rows showing whether Joystick Controls is `Enabled` or `Disabled`, the current control method (`Live` or `Preview`), and the cameras currently assigned to Main and Preview. Selecting Main or Preview updates the control method; selecting a camera updates the corresponding source. Swapping exchanges the Main and Preview camera names and changes the control method to the controlled camera's new role while joystick control stays on that physical camera. When Preview is disabled, its status reads `Disabled`.
-
-While Joystick Controls is enabled, the macro monitors `xStatus Cameras SpeakerTrack Status`. If SpeakerTrack becomes `Active`, the macro deactivates automatic tracking again, reasserts the last Main source selected with the joystick, preserves the current joystick control method, Preview source, handedness, and button assignments, and shows a ten-second warning telling the operator to disable Joystick Controls before enabling SpeakerTrack.
-
-`config.joystick.StartingHand` sets the handedness selected after a macro runtime restart. A panel change is runtime state and does not rewrite the macro configuration.
-
-`config.controls` is keyed by the named Thrustmaster button IDs for `config.joystick.StartingHand`. The entries remain in printed guide-button order so the configuration is readable alongside the operator guide. All 16 buttons must appear, including unused buttons:
-
-```js
-controls: {
-  STICK_TRIGGER: 'PrecisionMode',
-  STICK_SOUTH: '',
-  STICK_EAST: 'SwapMainPreview',
-  STICK_WEST: 'SwapMainPreview',
-  BASE_LEFT_1: 'ControlMain',
-  BASE_LEFT_2: 'SelfviewWindowed',
-  BASE_LEFT_3: 'SelfviewFullscreen',
-  BASE_LEFT_6: '',
-  BASE_LEFT_5: 'SelfviewOff',
-  BASE_LEFT_4: 'ControlPreview',
-  BASE_RIGHT_3: 'SelectCamera2',
-  BASE_RIGHT_2: 'SelectCamera1',
-  BASE_RIGHT_1: '',
-  BASE_RIGHT_4: '',
-  BASE_RIGHT_5: 'SelectCamera3',
-  BASE_RIGHT_6: 'SelectCamera4'
-}
-```
-
-Use `''`, `null`, or `undefined` when a listed button should perform no action. The configurator consistently generates `''`. Built-in actions may be unused or assigned to multiple buttons. Each configured camera action must be assigned to exactly one button. When handedness is changed from the runtime control panel, the macro remaps these startup IDs so the documented physical assignments stay in place.
-
-### Control manifest
-
-| `ButtonAction` | What it does |
+| Configuration property | What to enter |
 |---|---|
-| `''`, `null`, or `undefined` | Leaves the listed button without an operator action |
-| `PrecisionMode` | Reduces camera movement speed while the assigned button is held |
-| `SwapMainPreview` | Swaps the Main and Preview sources while joystick control follows the same physical camera into its new role |
-| `ControlMain` | Assigns joystick movement to the camera currently on Main |
-| `ControlPreview` | Assigns joystick movement to the camera currently on Preview |
-| `SelfviewWindowed` | Shows selfview as an inset on the first monitor |
-| `SelfviewFullscreen` | Shows fullscreen selfview on the first monitor |
-| `SelfviewOff` | Hides selfview |
+| `config.documentation.ProjectName` | Optional project name included in generated documentation. |
+| `config.documentation.RoomName` | Optional room name included in generated documentation. |
+| `config.previewDisplay.mode` | `'On'` to stage sources on a Preview display or `'Off'` for Main-only operation. |
+| `config.previewDisplay.output` | Positive whole-number matrix output reserved for Preview. It is still required when Preview is off. |
+| `config.userInterface.panelLocation` | `'HomeScreen'`, `'CallControls'`, `'HomeScreenAndCallControls'`, or `'ControlPanel'`. |
+| `config.joystick.StartingHand` | `'left'` or `'right'`; match the switch on the bottom of the joystick. |
+| `config.joystick.SetDefaultCamera` | `true` to put the default camera on Main when controls are enabled; `false` to leave the existing Main source unchanged. |
+| `config.joystick.DefaultCameraAction` | The `ButtonAction` of the default camera, such as `'SelectCamera1'`. |
+| `config.joystick.Camera.PanTiltRampSpeed` | Whole number from `1` to `24`. |
+| `config.joystick.Camera.ZoomRampSpeed` | Whole number from `1` to `15`. |
+| `config.joystick.Camera.SlowModeDivisor` | Number greater than `0`; Precision Mode divides both movement speeds by this value. |
 
-### Camera actions
+Keep the default `InstallerUrl` and `RepositoryUrl` unless the project is hosted somewhere else. The macro uses `InstallerUrl` to retrieve the custom panel icon and retains the standard Sliders icon if that download fails.
 
-`config.cameras` is an array of one to four definitions:
+### Define one to four cameras
+
+Each camera needs a unique, readable `ButtonAction`:
 
 ```js
-documentation: {
-  ProjectName: 'Joystick Camera Control',
-  RoomName: 'Room 1',
-  InstallerUrl: 'https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/',
-  RepositoryUrl: 'https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M'
-},
-userInterface: {
-  panelLocation: 'HomeScreenAndCallControls'
-},
-joystick: {
-  StartingHand: 'right',
-  SetDefaultCamera: true,
-  DefaultCameraAction: 'SelectCamera1',
-  Camera: {
-    PanTiltRampSpeed: 12,
-    ZoomRampSpeed: 12,
-    SlowModeDivisor: 2
-  }
-},
 cameras: [
   {
     ButtonAction: 'SelectCamera1',
-    Name: 'Camera 1',
+    Name: 'Presenter',
     ConnectorId: '1',
     ControlId: '1'
   },
   {
     ButtonAction: 'SelectCamera2',
-    Name: 'Camera 2',
+    Name: 'Audience',
     ConnectorId: '2',
     ControlId: '2'
   }
 ]
 ```
 
-`PanTiltRampSpeed` accepts `1`–`24`, while `ZoomRampSpeed` accepts `1`–`15`. Precision Mode divides both configured speeds by the same `SlowModeDivisor`, rounds them to a whole number, and keeps the result at or above `1`.
+The array must contain between one and four cameras. Every camera action must be unique and assigned to exactly one physical button.
 
-Every camera `ButtonAction` must be non-empty, unique, different from every built-in action, and assigned exactly once in `config.controls`. `SetDefaultCamera` must be `true` or `false`, and `DefaultCameraAction` must reference one configured camera action.
+### Assign all 16 buttons
 
-The browser page generates these identifiers from camera names and keeps camera assignments unique automatically.
+Edit the values in `config.controls` using the actions listed above. Keep every logical ID in the object, even when its value is blank. Use `''` for a button with No Action.
 
-### Default physical button map
+The supplied defaults are authored for `StartingHand: 'right'`. If the room should start left-handed, move each base-button action to the corresponding **Left-handed logical ID** in the default-layout table; changing `StartingHand` alone does not rewrite the configuration. Later handedness changes made from the RoomOS panel preserve these configured physical positions automatically.
 
-The guide button number remains the stable visual reference. The named configuration key is the Thrustmaster ID resolved for `StartingHand`.
+If you remove a camera, also remove its old `SelectCamera...` assignment from `config.controls`. Confirm that:
 
-| Button | Physical control | Right-handed config key | Default `ButtonAction` |
-|---:|---|---|---|
-| 1 | Trigger | `STICK_TRIGGER` | `PrecisionMode` |
-| 2 | Lower center stick button | `STICK_SOUTH` | `''` |
-| 3 | Left stick-side button | `STICK_EAST` | `SwapMainPreview` |
-| 4 | Right stick-side button | `STICK_WEST` | `SwapMainPreview` |
-| 5 | Left base top button | `BASE_LEFT_1` | `ControlMain` |
-| 6 | Left base upper middle button | `BASE_LEFT_2` | `SelfviewWindowed` |
-| 7 | Left base middle button | `BASE_LEFT_3` | `SelfviewFullscreen` |
-| 8 | Left base lower button | `BASE_LEFT_6` | `''` |
-| 9 | Left base lower middle button | `BASE_LEFT_5` | `SelfviewOff` |
-| 10 | Left base inner button | `BASE_LEFT_4` | `ControlPreview` |
-| 11 | Right base top button | `BASE_RIGHT_3` | `SelectCamera2` |
-| 12 | Right base upper middle button | `BASE_RIGHT_2` | `SelectCamera1` |
-| 13 | Right base inner top button | `BASE_RIGHT_1` | `''` |
-| 14 | Right base inner lower button | `BASE_RIGHT_4` | `''` |
-| 15 | Right base lower middle button | `BASE_RIGHT_5` | `SelectCamera3` |
-| 16 | Right base lower button | `BASE_RIGHT_6` | `SelectCamera4` |
+- every configured camera action appears exactly once;
+- `DefaultCameraAction` points to one of those cameras;
+- every non-blank value is a built-in action or a configured camera action;
+- Preview-only actions are blanked when they would confuse operators in a Main-only room.
 
-The three analog axes are intentionally fixed and are not button actions:
+The macro validates this configuration at startup and reports a clear initialization error for missing, duplicated, or unknown values.
 
-- main stick pitch: tilt;
-- main stick twist: pan;
-- mini-stick pitch: zoom.
+## Install the macros manually
 
-## Manual install
+This is the primary installation path. No browser installer is required.
 
-1. Connect the Thrustmaster T.16000M to a supported USB port and set its physical handedness switch to match `config.joystick.StartingHand`.
-2. Install the external class with macro name `Thrustmaster_16000M-Class`.
-3. Import `Joystick_CameraControl_ProductionSwitcher.js`.
-4. Save and activate the solution macro.
-5. Restart the macro runtime. This restarts every active macro on the device.
-6. Open the self-installed `Joystick Controls` panel, confirm the handedness, and select `Enabled`. Select `Disabled` to stop joystick handling; opening or closing the panel alone has no effect.
+1. Download this repository's [solution macro](Joystick_CameraControl_ProductionSwitcher.js).
+2. Download [`Thrustmaster_16000M-Class.js`](https://github.com/ctg-tme/Thrustmaster_16000M-InputDevice-Class/blob/main/Thrustmaster_16000M-Class.js) from the separate InputDevice class project.
+3. Complete the configuration steps above before importing the solution macro, or edit the same configuration block in the RoomOS Macro Editor.
+4. Connect the T.16000M to the RoomOS device and set the physical switch on its underside to the configured handedness.
+5. Sign in to the device web interface and open the **Macro Editor**.
+6. Import the dependency and save it with the exact macro name `Thrustmaster_16000M-Class`. It can remain inactive because the solution imports it as a module.
+7. Import `Joystick_CameraControl_ProductionSwitcher.js`, then save and activate it.
+8. Restart the macro runtime. **This restarts every active macro on the device**, so perform this step during an appropriate maintenance window.
+9. Open **Joystick Controls** on the touch controller, confirm the handedness, and select **Enabled**.
+10. Open **Status** and verify the expected Main camera, Preview camera, and control method before operating the room.
 
-## Development
+The solution macro automatically enables RoomOS joystick input and installs or updates its touch-panel UI each time it starts. Look for `Joystick Ready with Pan/Tilt/Zoom` in the macro logs to confirm successful initialization.
 
-```sh
-cd installer
-npm ci
-npm test
-npm run build
-```
+## Advanced: configure and install with the Web Tool
 
-The RoomOS fake-runtime fixtures are kept under the ignored `.roomos-local/` directory because they bundle the separate Thrustmaster class only for local validation.
+The optional browser configurator can discover an installed configuration, guide button assignments, install or update both macros, and generate a configuration-specific PDF operator guide. Its device workflow restarts the RoomOS macro runtime and is intended for advanced deployments.
 
-## Source extraction
+See [Web Tool configuration and installation](docs/web-tool-installation.md) for the hosted tool, device checks, security behavior, operator-guide generation, and local development instructions.
 
-The initial implementation was isolated from [infocomm-2026-AVoIP-RoomCustomization-Demo](https://github.com/ctg-tme/infocomm-2026-AVoIP-RoomCustomization-Demo).
+## Project contents
+
+| Path | Purpose |
+|---|---|
+| [Joystick_CameraControl_ProductionSwitcher.js](Joystick_CameraControl_ProductionSwitcher.js) | The configurable RoomOS solution macro and self-installed Joystick Controls panel. |
+| [docs/web-tool-installation.md](docs/web-tool-installation.md) | Advanced browser configuration, installation, and update workflow. |
+| [installer/](installer/) | Source for the optional browser Web Tool. |
+| [output/pdf/Joystick_CameraControl_User_Manual.pdf](output/pdf/Joystick_CameraControl_User_Manual.pdf) | Representative generated operator guide. |
+| [Guides/thrustmaster16000m-camera-guide.html](Guides/thrustmaster16000m-camera-guide.html) | Original extracted control reference. |
+| [CONTEXT.md](CONTEXT.md) | Canonical operator terminology and project context. |
+
+## Project background
+
+This standalone implementation was isolated from the [InfoComm 2026 AVoIP Room Customization Demo](https://github.com/ctg-tme/infocomm-2026-AVoIP-RoomCustomization-Demo) without that demo's lighting, web, presentation, video-composition, standby, analytics, or HTTP-client behavior.
 
 ## License
 
