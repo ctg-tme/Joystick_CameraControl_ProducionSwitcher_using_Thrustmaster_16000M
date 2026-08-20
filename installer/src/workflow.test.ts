@@ -207,6 +207,11 @@ describe('configurator workflow presentation', () => {
 
     expect(source).toContain('<h2>Download Macro</h2>');
     expect(source).toContain("const deviceAction = isUpdate ? 'Update Macro' : 'Install Macro';");
+    expect(source).toContain('class="review-device-status');
+    expect(source).toContain('class="review-install-result');
+    expect(source).toContain('id="disconnect-device"');
+    expect(source).not.toContain('private renderInstaller');
+    expect(source).not.toContain('Installation plan');
     expect(source).toContain("private installationMode: InstallationMode = 'install';");
     expect(source).toContain("this.installationMode = 'update';");
     expect(source).toContain("if (actionAfterConnect === 'install') await this.installDevice();");

@@ -443,11 +443,21 @@ export class ConfiguratorApp {
     const configurationIsValid = validateConfiguratorState(this.state).length === 0;
     const hasSupportedTarget = this.hasSupportedTarget();
     const session = this.deviceSession.snapshot();
+    const verifiedDevice = session.verifiedDevice;
+    const installResult = session.installationResult;
     const isUpdate = this.installationMode === 'update';
     const deviceAction = isUpdate ? 'Update Macro' : 'Install Macro';
     const deviceDescription = session.connected
       ? `${isUpdate ? 'Update' : 'Install'} the macro on the verified ${escapeHtml(session.verifiedDevice?.productPlatform ?? 'RoomOS device')}.`
       : `Connect directly to the target RoomOS device, verify it, and ${isUpdate ? 'update' : 'install'} the solution.`;
+    const canPromptInstall = Boolean(
+      session.connected &&
+      verifiedDevice?.serialMatches &&
+      hasSupportedTarget &&
+      configurationIsValid &&
+      !this.busy,
+    );
+    const canConnect = hasSupportedTarget && configurationIsValid && !this.busy;
     return `
       <section class="review-action-grid" aria-label="Installation and download options">
         <article class="review-action primary-action">
@@ -455,10 +465,31 @@ export class ConfiguratorApp {
           <div><h2>Download Macro</h2><p>Save the configured JavaScript macro for a manual RoomOS upload.</p></div>
           <button class="button primary" id="download-macro" type="button" ${hasSupportedTarget && configurationIsValid ? '' : 'disabled'}>Download Macro</button>
         </article>
-        <article class="review-action">
+        <article class="review-action device-action">
           <span class="review-action-number">2</span>
-          <div><h2>${deviceAction}</h2><p>${deviceDescription}</p></div>
-          <button class="button secondary" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${hasSupportedTarget && configurationIsValid ? '' : 'disabled'}>${deviceAction}</button>
+          <div>
+            <h2>${deviceAction}</h2>
+            <p>${deviceDescription}</p>
+            ${verifiedDevice ? `
+              <div class="review-device-status ${verifiedDevice.serialMatches && verifiedDevice.activeCalls === 0 ? 'success' : 'error'}" role="status" aria-live="polite">
+                <strong>${verifiedDevice.serialMatches ? 'Serial confirmed' : 'Serial mismatch — installation blocked'}</strong>
+                <span>${escapeHtml(verifiedDevice.productPlatform)} · RoomOS ${escapeHtml(verifiedDevice.roomOsVersion)}</span>
+                <span>${verifiedDevice.activeCalls === 0 ? 'No active calls' : `${verifiedDevice.activeCalls} active call(s) — installation blocked`}</span>
+              </div>` : `
+              <div class="review-device-status neutral" role="status" aria-live="polite">
+                <strong>Not connected</strong>
+                <span>Connect and verify the exact device before installation.</span>
+              </div>`}
+            ${installResult ? `
+              <div class="review-install-result ${installResult.kind === 'ready' ? 'success' : installResult.kind === 'failed' ? 'error' : 'warning'}" role="status" aria-live="polite">
+                <strong>${installResult.kind === 'ready' ? 'Installation ready' : installResult.kind === 'failed' ? 'Initialization failed' : 'Initialization not confirmed'}</strong>
+                <span>${escapeHtml(installResult.message)}</span>
+              </div>` : ''}
+          </div>
+          <div class="review-action-buttons">
+            <button class="button secondary" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${session.connected ? (canPromptInstall ? '' : 'disabled') : (canConnect ? '' : 'disabled')}>${deviceAction}</button>
+            ${session.connected ? '<button class="button secondary" id="disconnect-device" type="button">Disconnect</button>' : ''}
+          </div>
         </article>
         <article class="review-action">
           <span class="review-action-number">3</span>
@@ -482,7 +513,6 @@ export class ConfiguratorApp {
         </header>
         ${this.renderReviewActions()}
         ${this.renderOutput()}
-        ${this.renderInstaller()}
       </div>`;
   }
 
@@ -951,57 +981,6 @@ export class ConfiguratorApp {
         ${errors.length ? `<div class="callout error"><strong>Configuration needs attention</strong><ul>${errors.map((error) => `<li>${escapeHtml(error)}</li>`).join('')}</ul></div>` : `
           <pre class="code-preview"><code>${escapeHtml(configSource)}</code></pre>`}
         ${this.sourceError ? `<div class="callout error"><strong>Packaged source unavailable</strong><p>${escapeHtml(this.sourceError)}</p></div>` : ''}
-      </section>`;
-  }
-
-  private renderInstaller(): string {
-    const session = this.deviceSession.snapshot();
-    const verifiedDevice = session.verifiedDevice;
-    const installResult = session.installationResult;
-    const isUpdate = this.installationMode === 'update';
-    const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
-    const operation = isUpdate ? 'update' : 'installation';
-    const configurationIsValid = validateConfiguratorState(this.state).length === 0;
-    const hasSupportedTarget = this.hasSupportedTarget();
-    const canPromptInstall = Boolean(
-      session.connected &&
-      verifiedDevice?.serialMatches &&
-      hasSupportedTarget &&
-      configurationIsValid &&
-      !this.busy,
-    );
-    return `
-      <section class="panel section no-print installer-section" id="install">
-        <div class="section-heading">
-          <div><span class="section-kicker">Direct installation</span><h2>${isUpdate ? 'Update macro on RoomOS' : 'Install macro on RoomOS'}</h2></div>
-          <p>${session.connected ? `The verified device is ready for a reviewed ${operation}.` : `Connect in a secure modal without leaving this page. The ${operation} begins immediately after verification.`}</p>
-        </div>
-        <div class="install-layout">
-          <div class="install-plan-panel">
-            <h3>Installation plan</h3>
-            <ol class="install-plan">
-              <li><span>1</span><div><strong>${isUpdate ? 'Update' : 'Install'} dependency</strong><code>${escapeHtml(this.sources?.release.dependencies.map((dependency) => dependency.macroName).join(', ') ?? 'Select a supported Release')}</code><small>Saved inactive from the exact dependency Release packaged with the selected source.</small></div></li>
-              <li><span>2</span><div><strong>${isUpdate ? 'Update' : 'Install'} configured macro</strong><code>Joystick_CameraControl_ProductionSwitcher</code><small>Saved and activated with the mapping shown above.</small></div></li>
-              <li><span>3</span><div><strong>Restart macro runtime</strong><small>Every active macro on the device restarts. The macro then installs its UI panel.</small></div></li>
-            </ol>
-          </div>
-          <div class="install-review">
-            <h3>Device status</h3>
-            ${verifiedDevice ? `
-              <div class="device-result ${verifiedDevice.serialMatches && verifiedDevice.activeCalls === 0 ? 'success' : 'error'}">
-                <strong>${verifiedDevice.serialMatches ? 'Serial confirmed' : 'Serial mismatch — installation blocked'}</strong>
-                <span>${escapeHtml(verifiedDevice.productPlatform)} · RoomOS ${escapeHtml(verifiedDevice.roomOsVersion)}</span>
-                <span>${verifiedDevice.activeCalls === 0 ? 'No active calls' : `${verifiedDevice.activeCalls} active call(s) — installation blocked`}</span>
-              </div>` : '<div class="device-result neutral"><strong>Not connected</strong><span>Connect and verify the exact device in the secure modal.</span></div>'}
-            <div class="install-buttons">
-              ${session.connected ? '<button class="button secondary" id="disconnect-device" type="button">Disconnect</button>' : ''}
-              <button class="button primary install-button" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${session.connected ? (canPromptInstall ? '' : 'disabled') : (hasSupportedTarget && configurationIsValid ? '' : 'disabled')}>${actionLabel}</button>
-            </div>
-          </div>
-        </div>
-        ${this.statusMessage ? `<div class="callout progress"><strong>Installation progress</strong><p>${escapeHtml(this.statusMessage)}</p></div>` : ''}
-        ${this.errorMessage ? `<div class="callout error"><strong>Unable to continue</strong><p>${escapeHtml(this.errorMessage)}</p></div>` : ''}
-        ${installResult ? `<div class="callout ${installResult.kind === 'ready' ? 'success' : installResult.kind === 'failed' ? 'error' : 'warning'}"><strong>${installResult.kind === 'ready' ? 'Installation ready' : installResult.kind === 'failed' ? 'Initialization failed' : 'Initialization not confirmed'}</strong><p>${escapeHtml(installResult.message)}</p></div>` : ''}
       </section>`;
   }
 

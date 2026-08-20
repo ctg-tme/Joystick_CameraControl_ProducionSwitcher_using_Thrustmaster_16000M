@@ -646,7 +646,6 @@ code {
 
 .hero-actions,
 .output-actions,
-.install-buttons,
 .camera-actions {
   display: flex;
   flex-wrap: wrap;
@@ -939,6 +938,45 @@ code {
 
 .review-action .button {
   width: 100%;
+}
+
+.review-action-buttons {
+  display: grid;
+  gap: 10px;
+}
+
+.review-device-status,
+.review-install-result {
+  display: grid;
+  gap: 3px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-left: 4px solid var(--control-border-weak-default);
+  border-radius: 0 6px 6px 0;
+  background: var(--base-bg-medium-active);
+}
+
+.review-device-status span,
+.review-install-result span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-device-status.success,
+.review-install-result.success {
+  border-left-color: var(--positive-border-default);
+  background: var(--positive-bg-medium-default);
+}
+
+.review-device-status.error,
+.review-install-result.error {
+  border-left-color: var(--negative-border-default);
+  background: var(--negative-bg-medium-default);
+}
+
+.review-install-result.warning {
+  border-left-color: var(--warning-border-default);
+  background: var(--warning-bg-medium-default);
 }
 
 .content-shell {
@@ -1804,12 +1842,6 @@ code {
   white-space: pre;
 }
 
-.install-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, .8fr);
-  gap: 28px;
-}
-
 .device-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1817,101 +1849,8 @@ code {
   align-content: start;
 }
 
-.device-form .wide,
-.install-buttons {
+.device-form .wide {
   grid-column: 1 / -1;
-}
-
-.install-review {
-  padding-left: 28px;
-  border-left: 1px solid var(--line);
-}
-
-.install-plan-panel h3,
-.install-review h3 {
-  font-size: 17px;
-}
-
-.install-plan {
-  display: grid;
-  gap: 13px;
-  margin: 16px 0;
-  padding: 0;
-  list-style: none;
-}
-
-.install-plan li {
-  display: grid;
-  grid-template-columns: 28px 1fr;
-  gap: 10px;
-}
-
-.install-plan li > span {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border: 1px solid var(--control-border-default);
-  border-radius: 6px;
-  color: var(--interact-text-default);
-  font-weight: 800;
-}
-
-.install-plan strong,
-.install-plan code,
-.install-plan small {
-  display: block;
-}
-
-.install-plan small {
-  margin-top: 3px;
-  color: var(--muted);
-}
-
-.device-result {
-  display: grid;
-  gap: 3px;
-  margin: 18px 0;
-  padding: 12px 14px;
-  border-left: 4px solid var(--unused);
-  background: var(--base-bg-medium-active);
-}
-
-.device-result span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.device-result.success {
-  border-left-color: var(--positive-border-default);
-  background: var(--positive-bg-medium-default);
-}
-
-.device-result.error {
-  border-left-color: var(--negative-border-default);
-  background: var(--negative-bg-medium-default);
-}
-
-.acknowledgement {
-  display: grid;
-  grid-template-columns: 18px 1fr;
-  gap: 9px;
-  align-items: start;
-  color: var(--base-text-medium-default);
-  font-size: 13px;
-}
-
-.acknowledgement input {
-  margin-top: 3px;
-  accent-color: var(--control-bg-strong-default);
-}
-
-.install-button {
-  width: 100%;
-  margin-top: 14px;
-  border-color: var(--interact-bg-default);
-  background: var(--interact-bg-default);
-  color: var(--interact-text-in-default);
 }
 
 .callout {
@@ -2591,8 +2530,7 @@ td code {
     padding: 12px 30px;
   }
 
-  .hero,
-  .install-layout {
+  .hero {
     grid-template-columns: 1fr;
   }
 
@@ -2617,11 +2555,6 @@ td code {
     justify-content: start;
   }
 
-  .install-review {
-    padding: 22px 0 0;
-    border-top: 1px solid var(--line);
-    border-left: 0;
-  }
 }
 
 @media (max-width: 600px) {
@@ -2798,8 +2731,7 @@ td code {
     border-right: 0;
   }
 
-  .device-form .wide,
-  .install-buttons {
+  .device-form .wide {
     grid-column: auto;
   }
 
