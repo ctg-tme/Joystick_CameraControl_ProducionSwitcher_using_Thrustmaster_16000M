@@ -196,16 +196,6 @@ export function discoverCameraSourcesFromResponses(
   const cameraConnectors = connectors.filter(
     (connector) => optionalScalarString(objectField(connector, 'InputSourceType'))?.toLowerCase() === 'camera',
   );
-  const configuredControlIds = new Set(cameraConnectors.flatMap((connector) => {
-    const cameraControl = recordValue(objectField(connector, 'CameraControl'));
-    const controlId = optionalScalarString(cameraControl && objectField(cameraControl, 'CameraId'))?.trim();
-    return controlId ? [controlId] : [];
-  }));
-  const unmatchedCameraStatuses = cameras.filter((camera) => {
-    const id = optionalScalarString(objectField(camera, 'id', 'Id'))?.trim();
-    return Boolean(id && !configuredControlIds.has(id));
-  });
-  const takeUnmatchedCameraStatus = (): Record<string, unknown> | undefined => unmatchedCameraStatuses.shift();
 
   return cameraConnectors
     .flatMap((connector): DiscoveredCameraSource[] => {
@@ -215,12 +205,7 @@ export function discoverCameraSourcesFromResponses(
       const configuredControlId = optionalScalarString(
         cameraControl && objectField(cameraControl, 'CameraId'),
       )?.trim() || null;
-      const fallbackStatus = configuredControlId === null
-        ? takeUnmatchedCameraStatus()
-        : undefined;
-      const matchedStatus = configuredControlId === null
-        ? fallbackStatus
-        : camerasById.get(configuredControlId);
+      const matchedStatus = camerasById.get(configuredControlId ?? connectorId);
       const controlId = configuredControlId
         ?? optionalScalarString(matchedStatus && objectField(matchedStatus, 'id', 'Id'))?.trim()
         ?? null;

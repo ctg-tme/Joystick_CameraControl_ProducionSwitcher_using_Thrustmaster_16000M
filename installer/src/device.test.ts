@@ -110,13 +110,16 @@ describe('device installation', () => {
     }]);
   });
 
-  it('uses the next unmatched xStatus Cameras id when connector configuration omits CameraId', () => {
+  it('uses the connector id to match xStatus Cameras when configuration omits CameraId', () => {
     const result = discoverCameraSourcesFromResponses(
       [{
         id: '8',
         InputSourceType: 'camera',
         Name: 'Ethernet 1',
-        CameraControl: { Mode: 'On' },
+      }, {
+        id: '9',
+        InputSourceType: 'camera',
+        Name: 'Room Vision PTZ',
       }, {
         id: '1',
         InputSourceType: 'camera',
@@ -134,11 +137,6 @@ describe('device installation', () => {
           Connected: 'True',
           DetectedConnector: '0',
           Model: 'Room Vision PTZ',
-        }, {
-          id: '10',
-          Connected: 'False',
-          DetectedConnector: '8',
-          Model: 'Precision 60',
         }] },
       },
     );
@@ -151,12 +149,19 @@ describe('device installation', () => {
       connection: 'connected',
       model: 'Quad Camera',
     }, {
-      ConnectorId: '8',
-      Name: 'Ethernet 1',
+      ConnectorId: '9',
+      Name: 'Room Vision PTZ',
       ControlId: '9',
-      cameraControlMode: 'On',
+      cameraControlMode: undefined,
       connection: 'connected',
       model: 'Room Vision PTZ',
+    }, {
+      ConnectorId: '8',
+      Name: 'Ethernet 1',
+      ControlId: null,
+      cameraControlMode: undefined,
+      connection: 'unavailable',
+      model: undefined,
     }]);
   });
 
