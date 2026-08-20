@@ -65,58 +65,72 @@ const LOCAL_DEVELOPMENT_TARGET = 'local-development';
 const CONFIGURATION_DEFINITIONS = {
   projectName: {
     label: 'Project name',
+    path: 'config.documentation',
     description: 'The project name used for documentation within the macro. It does not affect operation.',
   },
   roomName: {
     label: 'Room name',
+    path: 'config.documentation',
     description: 'The room where the macro will be installed. It is used only for documentation and can help distinguish rooms with different configurations.',
   },
   handedness: {
     label: 'Physical handedness switch',
+    path: 'config.joystick',
     description: 'Updates the macro to match the handedness switch on the bottom of the joystick. If they do not match, the base-button references swap sides.',
   },
   setDefaultCamera: {
     label: 'Set default camera',
-    description: 'Controls whether enabling Joystick Controls sets Main to the configured default camera. Disable it when the operator will choose the Main source manually.',
+    path: 'config.joystick',
+    description: 'Controls whether enabling Joystick Controls sets Main to the configured default camera. Disabled leaves the current Main source unchanged; use it when the operator will choose the Main source manually.',
   },
   panelLocation: {
     label: 'Joystick Controls location',
+    path: 'config.userInterface',
     description: 'Controls where the Joystick Controls UI is available on the RoomOS device. HomeScreenAndCallControls makes it available both outside and during calls.',
   },
   previewMode: {
     label: 'Preview display mode',
-    description: 'Uses the Video Matrix xAPI to reserve a screen output as a local camera Preview display before a source is sent into the call. Enable it only with a free HDMI output; it is not recommended when three displays are actively in use.',
+    path: 'config.previewDisplay',
+    description: 'Uses the Video Matrix xAPI to reserve a screen output as a local camera Preview display before a source is sent into the call. Off prevents all Preview controls, switching, and display commands. Enable it only with a free HDMI output; it is not recommended when three displays are actively in use.',
   },
   previewOutput: {
     label: 'Preview display output',
+    path: 'config.previewDisplay',
     description: 'The HDMI output reserved for the local camera Preview display. Choose only a free output; Preview mode is not recommended when three displays are actively in use.',
   },
   panTiltRampSpeed: {
     label: 'PAN/TILT Ramp Speed',
+    path: 'config.joystick.Camera',
     description: 'The base speed for camera pan and tilt movement. Not all Cisco cameras respect this setting.',
   },
   zoomRampSpeed: {
     label: 'ZOOM Ramp Speed',
+    path: 'config.joystick.Camera',
     description: 'The base speed for camera zoom movement. Not all Cisco cameras respect this setting.',
   },
   slowModeDivisor: {
     label: 'Ramp divisor',
+    path: 'config.joystick.Camera',
     description: 'Divides the PAN/TILT and ZOOM speeds by this value while the Precision mode button is held.',
   },
   cameraName: {
     label: 'Camera name',
+    path: 'config.cameras',
     description: 'A readable name used in the macro, installer, status display, and generated PDF operator guide.',
   },
   videoConnectorId: {
     label: 'Video ConnectorId',
+    path: 'config.cameras',
     description: 'The RoomOS video input connector used to put this camera on Main or Preview.',
   },
   cameraControlId: {
     label: 'Camera ControlId',
+    path: 'config.cameras',
     description: 'The RoomOS camera identifier that receives PAN/TILT and ZOOM commands. Choose Disabled for USB or third-party video-only sources.',
   },
   defaultCamera: {
     label: 'Default camera',
+    path: 'config.joystick',
     description: 'The camera used for the macro\'s default Main, Preview, and joystick-control assignments. Set default camera determines whether enabling Joystick Controls applies it to Main.',
   },
 } as const;
@@ -673,7 +687,6 @@ export class ConfiguratorApp {
         <div class="settings-groups">
           <section class="settings-group settings-group-documentation" aria-labelledby="settings-documentation-title">
             <header class="settings-group-heading">
-              <code class="settings-path">config.documentation</code>
               <h2 id="settings-documentation-title">Documentation</h2>
             </header>
             <div class="settings-field-grid">
@@ -683,7 +696,6 @@ export class ConfiguratorApp {
           </section>
           <section class="settings-group settings-group-preview" aria-labelledby="settings-preview-title">
             <header class="settings-group-heading">
-              <code class="settings-path">config.previewDisplay</code>
               <h2 id="settings-preview-title">Preview display</h2>
             </header>
             <div class="settings-field-grid">
@@ -692,14 +704,12 @@ export class ConfiguratorApp {
                   <option value="On" ${this.state.previewMode === 'On' ? 'selected' : ''}>On</option>
                   <option value="Off" ${this.state.previewMode === 'Off' ? 'selected' : ''}>Off</option>
                 </select>
-                <small>Off prevents all Preview controls, switching, and display commands.</small>
               </label>
               <label class="field">${this.renderConfigurationLabel('previewOutput')}<select data-setting="previewOutput">${integerOptions(1, 3, this.state.previewOutput)}</select></label>
             </div>
           </section>
           <section class="settings-group settings-group-user-interface" aria-labelledby="settings-user-interface-title">
             <header class="settings-group-heading">
-              <code class="settings-path">config.userInterface</code>
               <h2 id="settings-user-interface-title">User interface</h2>
             </header>
             <div class="settings-field-grid">
@@ -712,7 +722,6 @@ export class ConfiguratorApp {
           </section>
           <section class="settings-group settings-group-joystick" aria-labelledby="settings-joystick-title">
             <header class="settings-group-heading">
-              <code class="settings-path">config.joystick</code>
               <h2 id="settings-joystick-title">Joystick</h2>
             </header>
             <div class="settings-field-grid settings-field-grid-three">
@@ -727,7 +736,6 @@ export class ConfiguratorApp {
                   <option value="true" ${this.state.setDefaultCamera ? 'selected' : ''}>Enabled</option>
                   <option value="false" ${!this.state.setDefaultCamera ? 'selected' : ''}>Disabled</option>
                 </select>
-                <small>Disabled leaves the current Main source unchanged when Joystick Controls is enabled.</small>
               </label>
               <label class="field">${this.renderConfigurationLabel('defaultCamera')}
                 <select id="default-camera">
@@ -737,7 +745,6 @@ export class ConfiguratorApp {
             </div>
             <section class="settings-subgroup" aria-labelledby="settings-camera-movement-title">
               <header class="settings-group-heading settings-subgroup-heading">
-                <code class="settings-path">config.joystick.Camera</code>
                 <h3 id="settings-camera-movement-title">Camera movement</h3>
               </header>
               <div class="settings-field-grid settings-field-grid-three">
@@ -758,7 +765,7 @@ export class ConfiguratorApp {
     return `
       <section class="panel section no-print" id="cameras">
         <div class="section-heading">
-          <div><code class="settings-path">config.cameras</code><h2>Configure camera sources</h2></div>
+          <div><h2>Configure camera sources</h2></div>
           <p>Camera ButtonAction names are generated automatically and become choices in every button dropdown.</p>
         </div>
         <div class="camera-source-layout">
@@ -861,7 +868,7 @@ export class ConfiguratorApp {
       <button class="field-info-trigger" type="button" aria-label="Information about ${escapeHtml(definition.label)}" aria-describedby="${tooltipId}">
         <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="9"></circle><path d="M12 10.75v6M12 7.25h.01"></path></svg>
       </button>
-      <span class="field-tooltip" id="${tooltipId}" role="tooltip">${escapeHtml(definition.description)}</span>
+      <span class="field-tooltip" id="${tooltipId}" role="tooltip"><strong class="field-tooltip-path">${escapeHtml(definition.path)}</strong><span>${escapeHtml(definition.description)}</span></span>
     </span></span>`;
   }
 

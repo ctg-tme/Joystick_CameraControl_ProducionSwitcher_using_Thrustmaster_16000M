@@ -1065,13 +1065,6 @@ code {
   line-height: 24px;
 }
 
-.settings-path {
-  width: fit-content;
-  color: var(--base-text-medium-default);
-  font-size: 11px;
-  line-height: 18px;
-}
-
 .settings-field-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
@@ -1180,6 +1173,16 @@ code {
   transform: translateY(4px);
   transition: opacity .15s ease, transform .15s ease, visibility .15s ease;
   visibility: hidden;
+}
+
+.field-tooltip-path {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--base-text-in-weak-default);
+  font-family: "Roboto Mono", ui-monospace, "Courier New", Menlo, Monaco, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
 }
 
 .field-tooltip::after {

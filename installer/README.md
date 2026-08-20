@@ -15,7 +15,9 @@ selection lasts only for the current in-memory workflow. Macro Settings mirrors 
 macro's `documentation`, `previewDisplay`, `userInterface`, `joystick`, nested
 `joystick.Camera`, and `cameras` groups. It includes configured and discovered
 camera sources, independent PAN/TILT and zoom ramp speeds, and their shared Ramp
-divisor used by Precision Mode.
+divisor used by Precision Mode. Each setting's information tooltip begins with
+its config-group path; those paths and longer helper text stay out of the form so
+the page remains compact.
 The Button Assignments page reads left to right while its complete action key
 opens in a modal. The workflow rail and browser history allow any visited page to
 be revisited without losing the in-session configuration. Refreshing warns the

@@ -137,14 +137,18 @@ describe('configurator workflow presentation', () => {
       'config.joystick',
       'config.joystick.Camera',
     ]) {
-      expect(settingsSource).toContain(`<code class="settings-path">${path}</code>`);
+      expect(source).toContain(`path: '${path}'`);
+      expect(settingsSource).not.toContain(path);
     }
 
     expect(settingsSource).toContain('class="settings-group settings-group-joystick"');
     expect(settingsSource).toContain('class="settings-subgroup"');
-    expect(settingsSource.indexOf('config.joystick.Camera')).toBeGreaterThan(
-      settingsSource.indexOf('class="settings-group settings-group-joystick"'),
-    );
+    expect(settingsSource).not.toContain('class="settings-path"');
+    expect(settingsSource).not.toContain('<small>Off prevents all Preview controls, switching, and display commands.</small>');
+    expect(settingsSource).not.toContain('<small>Disabled leaves the current Main source unchanged when Joystick Controls is enabled.</small>');
+    expect(source).toContain('Off prevents all Preview controls, switching, and display commands.');
+    expect(source).toContain('Disabled leaves the current Main source unchanged;');
+    expect(source).toContain('<strong class="field-tooltip-path">${escapeHtml(definition.path)}</strong>');
     expect(source).toContain("label: 'Ramp divisor'");
     expect(source).not.toContain("label: 'Precision divisor'");
   });
@@ -397,11 +401,13 @@ describe('configurator workflow presentation', () => {
 
     expect(appSource).toContain("label: 'ZOOM Ramp Speed'");
     expect(appSource).toContain('class="field-info-trigger"');
+    expect(appSource).toContain('class="field-tooltip-path"');
     expect(appSource).toContain('role="tooltip"');
     expect(appSource).not.toContain('field-optional');
     expect(appSource).not.toContain('(optional)');
     expect(styles).not.toContain('.field-optional');
     expect(styles).toContain('.field-info:focus-within .field-tooltip');
+    expect(styles).toContain('.field-tooltip-path');
     expect(styles).toContain('background: var(--inverse-bg-weak-default);');
     expect(readme).toContain('### Configuration reference');
     expect(readme).toContain('`config.joystick.Camera.SlowModeDivisor`');
