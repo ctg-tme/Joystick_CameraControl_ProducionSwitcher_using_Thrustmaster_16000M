@@ -81,7 +81,11 @@ describe('device installation', () => {
     }]);
   });
 
-  it('uses video connector status for an Ethernet camera without a CameraId and lists it first', () => {
+  it('does not treat video connector connectivity as camera connectivity', () => {
+    const statuses = {
+      cameras: { Camera: [{ id: '2', Connected: 'False', Model: 'Precision 60' }] },
+      videoInputConnectors: { Connector: [{ id: '8', Connected: 'True', Type: 'Ethernet' }] },
+    };
     const result = discoverCameraSourcesFromResponses(
       [{
         id: '2',
@@ -94,22 +98,19 @@ describe('device installation', () => {
         Name: 'Ethernet 1',
         CameraControl: { Mode: 'Off' },
       }],
-      {
-        cameras: { Camera: [{ id: '2', Connected: 'False', Model: 'Precision 60' }] },
-        videoInputConnectors: { Connector: [{ id: '8', Connected: 'True', Type: 'Ethernet' }] },
-      },
+      statuses,
     );
 
     expect(result.map(({ ConnectorId, connection }) => ({ ConnectorId, connection }))).toEqual([{
-      ConnectorId: '8',
-      connection: 'connected',
-    }, {
       ConnectorId: '2',
       connection: 'disconnected',
+    }, {
+      ConnectorId: '8',
+      connection: 'unavailable',
     }]);
   });
 
-  it('uses an unmatched xStatus Cameras id when connector configuration omits CameraId', () => {
+  it('uses the next unmatched xStatus Cameras id when connector configuration omits CameraId', () => {
     const result = discoverCameraSourcesFromResponses(
       [{
         id: '8',
@@ -133,6 +134,11 @@ describe('device installation', () => {
           Connected: 'True',
           DetectedConnector: '0',
           Model: 'Room Vision PTZ',
+        }, {
+          id: '10',
+          Connected: 'False',
+          DetectedConnector: '8',
+          Model: 'Precision 60',
         }] },
       },
     );
@@ -178,7 +184,7 @@ describe('device installation', () => {
     }]);
   });
 
-  it('reads both camera and video connector status through the verified session', async () => {
+  it('reads only camera status through the verified session', async () => {
     const status = vi.fn(async (path: string) => path === 'Cameras'
       ? { Camera: [] }
       : { Connector: [{ id: '8', Connected: 'True', Type: 'Ethernet' }] });
@@ -201,10 +207,10 @@ describe('device installation', () => {
     await expect(session.discoverCameraSources()).resolves.toMatchObject([{
       ConnectorId: '8',
       ControlId: null,
-      connection: 'connected',
+      connection: 'unavailable',
     }]);
+    expect(status).toHaveBeenCalledOnce();
     expect(status).toHaveBeenCalledWith('Cameras');
-    expect(status).toHaveBeenCalledWith('Video Input Connector');
   });
 
   it('reads an installed macro through the verified device socket', async () => {

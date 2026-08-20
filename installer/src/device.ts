@@ -28,7 +28,6 @@ export interface DiscoveredCameraSource {
 
 export interface CameraDiscoveryStatuses {
   cameras?: unknown;
-  videoInputConnectors?: unknown;
 }
 
 export interface InstallSources {
@@ -174,24 +173,13 @@ export function discoverCameraSourcesFromResponses(
   const cameras = collectionItems(
     statuses.cameras,
     'Camera',
-    (record) => objectField(record, 'Connected', 'Model', 'DetectedConnector') !== undefined,
-  );
-  const videoInputConnectors = collectionItems(
-    statuses.videoInputConnectors,
-    'Connector',
-    (record) => objectField(record, 'Connected', 'SignalState', 'SourceId', 'Type') !== undefined,
+    (record) => objectField(record, 'Connected', 'Model') !== undefined,
   );
   const camerasById = new Map<string, Record<string, unknown>>();
   for (const camera of cameras) {
     const id = optionalScalarString(objectField(camera, 'id', 'Id'))?.trim();
     if (id) camerasById.set(id, camera);
   }
-  const videoInputConnectorsById = new Map<string, Record<string, unknown>>();
-  for (const connector of videoInputConnectors) {
-    const id = optionalScalarString(objectField(connector, 'id', 'Id'))?.trim();
-    if (id) videoInputConnectorsById.set(id, connector);
-  }
-
   const connectionFromStatus = (value: unknown): DiscoveredCameraConnection | undefined => {
     const normalized = optionalScalarString(value)?.trim().toLowerCase();
     if (normalized === 'true') return 'connected';
@@ -217,13 +205,7 @@ export function discoverCameraSourcesFromResponses(
     const id = optionalScalarString(objectField(camera, 'id', 'Id'))?.trim();
     return Boolean(id && !configuredControlIds.has(id));
   });
-  const takeUnmatchedCameraStatus = (connectorId: string): Record<string, unknown> | undefined => {
-    const detectedConnectorIndex = unmatchedCameraStatuses.findIndex((camera) => (
-      optionalScalarString(objectField(camera, 'DetectedConnector'))?.trim() === connectorId
-    ));
-    const fallbackIndex = detectedConnectorIndex >= 0 ? detectedConnectorIndex : 0;
-    return unmatchedCameraStatuses.splice(fallbackIndex, 1)[0];
-  };
+  const takeUnmatchedCameraStatus = (): Record<string, unknown> | undefined => unmatchedCameraStatuses.shift();
 
   return cameraConnectors
     .flatMap((connector): DiscoveredCameraSource[] => {
@@ -234,7 +216,7 @@ export function discoverCameraSourcesFromResponses(
         cameraControl && objectField(cameraControl, 'CameraId'),
       )?.trim() || null;
       const fallbackStatus = configuredControlId === null
-        ? takeUnmatchedCameraStatus(connectorId)
+        ? takeUnmatchedCameraStatus()
         : undefined;
       const matchedStatus = configuredControlId === null
         ? fallbackStatus
@@ -242,9 +224,7 @@ export function discoverCameraSourcesFromResponses(
       const controlId = configuredControlId
         ?? optionalScalarString(matchedStatus && objectField(matchedStatus, 'id', 'Id'))?.trim()
         ?? null;
-      const connectorStatus = videoInputConnectorsById.get(connectorId);
       const connection = connectionFromStatus(matchedStatus && objectField(matchedStatus, 'Connected'))
-        ?? connectionFromStatus(connectorStatus && objectField(connectorStatus, 'Connected'))
         ?? 'unavailable';
       return [{
         ConnectorId: connectorId,
@@ -261,15 +241,9 @@ export function discoverCameraSourcesFromResponses(
 
 async function discoverCameraSources(xapi: DeviceXapi): Promise<DiscoveredCameraSource[]> {
   const connectorConfiguration = await xapi.config.get('Video Input Connector');
-  const [cameraStatus, videoInputConnectorStatus] = await Promise.allSettled([
-    xapi.status.get('Cameras'),
-    xapi.status.get('Video Input Connector'),
-  ]);
+  const cameraStatus = await xapi.status.get('Cameras').catch(() => undefined);
   return discoverCameraSourcesFromResponses(connectorConfiguration, {
-    cameras: cameraStatus.status === 'fulfilled' ? cameraStatus.value : undefined,
-    videoInputConnectors: videoInputConnectorStatus.status === 'fulfilled'
-      ? videoInputConnectorStatus.value
-      : undefined,
+    cameras: cameraStatus,
   });
 }
 
