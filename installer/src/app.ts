@@ -454,7 +454,7 @@ export class ConfiguratorApp {
     if (!this.catalog) {
       return `
         <label class="release-picker" for="base-macro-release">
-          <span>Base macro release</span>
+          <span>Choose Release</span>
           <select id="base-macro-release" disabled><option>${this.sourceError ? 'Unavailable' : 'Loading…'}</option></select>
         </label>`;
     }
@@ -464,13 +464,12 @@ export class ConfiguratorApp {
       : 'Imported macro · Release unknown';
     return `
       <label class="release-picker" for="base-macro-release">
-        <span>Base macro release</span>
-        <select id="base-macro-release" aria-describedby="base-macro-release-help" ${this.busy ? 'disabled' : ''}>
+        <span>Choose Release</span>
+        <select id="base-macro-release" ${this.busy ? 'disabled' : ''}>
           ${selectedTag ? '' : `<option value="" selected disabled>${escapeHtml(unresolvedLabel)}</option>`}
           ${this.catalog.releases.map((release) => `
             <option value="${escapeHtml(release.tag)}" ${release.tag === selectedTag ? 'selected' : ''}>${escapeHtml(release.tag)}${release.tag === this.catalog?.latest ? ' · Latest' : ''}</option>`).join('')}
         </select>
-        <small id="base-macro-release-help">The selected base Release determines its exact dependency Release.</small>
       </label>`;
   }
 

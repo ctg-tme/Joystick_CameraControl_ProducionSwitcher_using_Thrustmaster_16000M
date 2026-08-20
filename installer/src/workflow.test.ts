@@ -259,7 +259,11 @@ describe('configurator workflow presentation', () => {
     ]);
 
     expect(appSource).toContain('<label class="release-picker" for="base-macro-release">');
-    expect(appSource).toContain('id="base-macro-release" aria-describedby="base-macro-release-help"');
+    expect(appSource.match(/<span>Choose Release<\/span>/g)).toHaveLength(2);
+    expect(appSource).toContain('id="base-macro-release" ${this.busy ? \'disabled\' : \'\'}>');
+    expect(appSource).not.toContain('<span>Base macro release</span>');
+    expect(appSource).not.toContain('base-macro-release-help');
+    expect(appSource).not.toContain('The selected base Release determines its exact dependency Release.');
     expect(appSource).toContain('Imported macro · Release unknown');
     expect(appSource).toContain('Migrate to latest release (${escapeHtml(catalog.latest)})');
     expect(appSource).toContain('const hasSupportedTarget = this.hasSupportedTarget();');
