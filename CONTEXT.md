@@ -35,6 +35,14 @@ _Avoid_: Discovered physical camera
 A Camera Source, typically from a USB or third-party camera, without a camera control target. It can be routed to Main or Preview but cannot respond to joystick pan, tilt, or zoom movement.
 _Avoid_: Disconnected camera, uncontrolled camera
 
+**Camera Control Assignment**:
+The macro's association of a Camera Source with a ControlId from 1 through 15, or with Disabled for a Video-only Camera Source. It is independent of the Device Camera Control Mode.
+_Avoid_: Device CameraControl Mode
+
+**Device Camera Control Mode**:
+The RoomOS connector setting reported during discovery. Off warns that device camera control is disabled but does not change the Camera Control Assignment automatically.
+_Avoid_: Camera Control Assignment
+
 **Swap**:
 An exchange of the Main and Preview camera sources without changing which physical camera is currently controlled. The Control Method changes to the controlled camera's new role: Preview becomes Live, or Live becomes Preview.
 _Avoid_: Cut, take
