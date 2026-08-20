@@ -1215,7 +1215,7 @@ export class ConfiguratorApp {
       <div class="site-shell${deviceConnectionPill ? ' device-connected' : ''}">
         <nav class="topbar no-print">
           <button type="button" class="wordmark" data-workflow-step="1">
-            <span class="wordmark-mark" aria-hidden="true"><img src="/icons/joystick-camera-control.svg" alt=""></span>
+            <span class="wordmark-mark" aria-hidden="true"><img src="./icons/joystick-camera-control.svg" alt=""></span>
             <span class="wordmark-copy"><strong>Joystick Camera Control</strong><small>${JOYSTICK_MODEL}</small></span>
           </button>
           <div class="topbar-actions">
