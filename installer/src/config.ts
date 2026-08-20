@@ -18,6 +18,7 @@ const CONFIG_END = '/* JOYSTICK_CONFIG_END */';
 
 export const PROJECT_INSTALLER_URL = 'https://ctg-tme.github.io/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M/';
 export const PROJECT_REPOSITORY_URL = 'https://github.com/ctg-tme/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M';
+export const PROJECT_REPOSITORY_QR_URL = 'https://tinyurl.com/RoomOS-Joystick-TM16000';
 
 export interface GeneratedCamera {
   ButtonAction: string;

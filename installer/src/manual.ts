@@ -466,7 +466,7 @@ function drawEnablementColumn(
     lineHeight: 9,
     maxLines: 2,
   });
-  drawRepositoryQrCode(page, model.repositoryUrl, repositoryIcon, x + 187, 48, 54);
+  drawRepositoryQrCode(page, model.repositoryQrUrl, repositoryIcon, x + 187, 48, 54);
 }
 
 function drawButtonRow(
