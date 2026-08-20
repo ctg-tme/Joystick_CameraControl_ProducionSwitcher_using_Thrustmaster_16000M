@@ -23,6 +23,10 @@ _Avoid_: Selected camera, active camera
 The safe state used when a Video-only Camera Source is selected. Joystick movement sends no camera-control commands and does not continue controlling a previous camera.
 _Avoid_: Previous camera control, disabled camera
 
+**Controlling**:
+The Main or Preview role followed by joystick camera control. A video-only qualifier means the role remains selected while pan, tilt, and zoom commands are suppressed.
+_Avoid_: Control Method
+
 **Camera Source**:
 A selectable RoomOS video input that may be associated with a camera control target. Its ConnectorId is unique within the configuration, while multiple Camera Sources may share the same ControlId.
 _Avoid_: Physical camera
@@ -44,7 +48,7 @@ The RoomOS connector setting reported during discovery. Off warns that device ca
 _Avoid_: Camera Control Assignment
 
 **Swap**:
-An exchange of the Main and Preview camera sources without changing which physical camera is currently controlled. The Control Method changes to the controlled camera's new role: Preview becomes Live, or Live becomes Preview.
+An exchange of the Main and Preview camera sources without changing which physical camera is currently controlled. Controlling changes to the controlled camera's new role: Preview becomes Live, or Live becomes Preview.
 _Avoid_: Cut, take
 
 **Precision Mode**:
