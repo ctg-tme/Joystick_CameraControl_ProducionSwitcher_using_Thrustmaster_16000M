@@ -88,6 +88,46 @@ describe('direct installation connection flow', () => {
     });
   });
 
+  it('maps System, Light, and Dark preferences to the matching Magnetic theme scopes', () => {
+    const systemTheme = {
+      matches: false,
+      addEventListener: vi.fn(),
+    };
+    vi.mocked(window.matchMedia).mockReturnValue(systemTheme as unknown as MediaQueryList);
+    const documentElement = {
+      dataset: {} as Record<string, string>,
+      style: { colorScheme: '' },
+    };
+    vi.stubGlobal('document', { documentElement });
+
+    const app = new ConfiguratorApp(testRoot(), undefined, testWorkflow());
+    const testableApp = app as unknown as {
+      themePreference: 'system' | 'light' | 'dark';
+      applyTheme(): void;
+    };
+
+    testableApp.applyTheme();
+    expect(documentElement.dataset).toMatchObject({
+      theme: 'light',
+      cdsTheme: 'magnetic-light',
+      themePreference: 'system',
+    });
+
+    systemTheme.matches = true;
+    testableApp.applyTheme();
+    expect(documentElement.dataset.cdsTheme).toBe('magnetic-dark');
+
+    testableApp.themePreference = 'light';
+    testableApp.applyTheme();
+    expect(documentElement.dataset.cdsTheme).toBe('magnetic-light');
+
+    testableApp.themePreference = 'dark';
+    systemTheme.matches = false;
+    testableApp.applyTheme();
+    expect(documentElement.dataset.cdsTheme).toBe('magnetic-dark');
+    expect(documentElement.style.colorScheme).toBe('dark');
+  });
+
   it('shows the latest published Release as the About macro version', () => {
     const app = new ConfiguratorApp(testRoot(), undefined, testWorkflow());
     const testableApp = app as unknown as {

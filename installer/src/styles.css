@@ -28,81 +28,6 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --accent-d-strong-default: #b587fa;
-  --accent-d-weak-default: #5b5077;
-  --accent-f-strong-default: #f7782f;
-  --accent-g-strong-default: #0bb2b8;
-  --accent-k-strong-default: #36b26e;
-  --accent-k-weak-default: #315d4a;
-  --base-bg-default: #0f1214;
-  --base-bg-hover: #0f1214;
-  --base-bg-medium-active: #373c42;
-  --base-bg-strong-default: #a7adb5;
-  --base-bg-weak-default: #23282e;
-  --base-border-default: #596069;
-  --base-border-strong-default: #c1c6cc;
-  --base-text-default: #f7f7f7;
-  --base-text-in-default: #23282e;
-  --base-text-medium-default: #d0d4d9;
-  --base-text-strong-default: #f0f1f2;
-  --base-text-weak-disabled: #6f7680;
-  --brand-accent-border-active: #52a62b;
-  --brand-accent-border-default: #52a62b;
-  --brand-accent-border-medium-default: #596069;
-  --brand-bg-default: #373c42;
-  --brand-bg-gradient-default: linear-gradient(90deg, #373c42 0%, #0f1214 100%);
-  --brand-bg-gradient-start: #373c42;
-  --brand-bg-hover: #373c42;
-  --brand-text-default: #f7f7f7;
-  --control-bg-default: #23282e;
-  --control-bg-disabled: #373c42;
-  --control-bg-focus: #2a3442;
-  --control-bg-hover: #2a3442;
-  --control-bg-strong-default: #649ef5;
-  --control-bg-weak-default: #23282e;
-  --control-bg-weak-hover: #373c42;
-  --control-border-default: #7e868f;
-  --control-border-focus: #7cadf7;
-  --control-border-hover: #7cadf7;
-  --control-border-weak-default: #656c75;
-  --control-border-weak-disabled: #596069;
-  --interact-bg-active: #7cadf7;
-  --interact-bg-default: #649ef5;
-  --interact-bg-disabled: #446392;
-  --interact-bg-hover: #7cadf7;
-  --interact-bg-weak-active: #2f3d52;
-  --interact-bg-weak-default: #23282e;
-  --interact-bg-weak-disabled: #464c54;
-  --interact-bg-weak-hover: #2f3d52;
-  --interact-border-active: #7cadf7;
-  --interact-border-default: #649ef5;
-  --interact-border-disabled: #446392;
-  --interact-border-hover: #7cadf7;
-  --interact-border-weak-default: #656c75;
-  --interact-icon-disabled: #446392;
-  --interact-icon-hover: #7cadf7;
-  --interact-icon-medium-default: #c1c6cc;
-  --interact-text-active: #7cadf7;
-  --interact-text-default: #649ef5;
-  --interact-text-disabled: #446392;
-  --interact-text-hover: #7cadf7;
-  --interact-text-in-active: #23282e;
-  --interact-text-in-default: #23282e;
-  --interact-text-in-disabled: #23282e;
-  --interact-text-in-hover: #23282e;
-  --inverse-bg-hover: #373c42;
-  --inverse-text-default: #f7f7f7;
-  --inverse-text-hover: #f7f7f7;
-  --inverse-text-medium-default: #c1c6cc;
-  --negative-bg-default: #fa5762;
-  --negative-bg-medium-default: #63363e;
-  --negative-border-default: #fa5762;
-  --overlay-bg-default: #000000bf;
-  --positive-bg-medium-default: #28546a;
-  --positive-border-default: #33bbf5;
-  --severe-warning-border-default: #f7782f;
-  --warning-bg-medium-default: #5c4d28;
-  --warning-border-default: #f0c243;
   --surface-shadow: 0 2px 5px rgb(0 0 0 / 18%);
 }
 
@@ -434,9 +359,13 @@ code {
   gap: 40px;
   padding: 64px var(--page-gutter) 72px;
   background:
-    radial-gradient(circle at 84% 8%, rgb(82 166 43 / 20%), transparent 34%),
-    var(--brand-bg-gradient-default);
-  color: var(--brand-text-default);
+    radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--brand-accent-border-default) 20%, transparent), transparent 34%),
+    var(--inverse-bg-gradient-default);
+  color: var(--inverse-text-default);
+}
+
+.hero .eyebrow {
+  color: var(--brand-accent-border-default);
 }
 
 .eyebrow,
@@ -480,7 +409,7 @@ code {
   padding: 14px;
   border-top: 3px solid var(--brand-accent-border-default);
   border-radius: 0 0 6px 6px;
-  background: var(--brand-bg-hover);
+  background: var(--inverse-bg-weak-default);
 }
 
 .solution-highlights strong {
@@ -524,7 +453,7 @@ code {
 .installer-introduction {
   margin-top: 34px;
   padding-top: 28px;
-  border-top: 1px solid var(--brand-accent-border-medium-default);
+  border-top: 1px solid var(--inverse-border-default);
 }
 
 .installer-introduction-heading {
@@ -608,9 +537,9 @@ code {
   gap: 18px;
   align-items: center;
   padding: 16px;
-  border: 1px solid var(--brand-accent-border-medium-default);
+  border: 1px solid var(--inverse-border-default);
   border-radius: 8px;
-  background: rgb(15 18 20 / 34%);
+  background: var(--inverse-bg-weak-default);
 }
 
 .installation-paths strong {
@@ -725,7 +654,7 @@ code {
 }
 
 .hero .button.secondary {
-  border-color: var(--brand-accent-border-medium-default);
+  border-color: var(--inverse-border-default);
   background: transparent;
   color: var(--inverse-text-default);
 }
@@ -745,9 +674,9 @@ code {
 .live-demo {
   overflow: hidden;
   margin: 0;
-  border: 1px solid var(--brand-accent-border-medium-default);
+  border: 1px solid var(--inverse-border-default);
   border-radius: 8px;
-  background: var(--brand-bg-hover);
+  background: var(--inverse-bg-weak-default);
   box-shadow: var(--surface-shadow);
 }
 
@@ -767,9 +696,9 @@ code {
 
 .purpose-checklist {
   padding: 22px;
-  border: 1px solid var(--brand-accent-border-medium-default);
+  border: 1px solid var(--inverse-border-default);
   border-radius: 8px;
-  background: var(--brand-bg-hover);
+  background: var(--inverse-bg-weak-default);
   box-shadow: var(--surface-shadow);
 }
 
@@ -793,7 +722,7 @@ code {
   display: grid;
   gap: 3px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--brand-accent-border-medium-default);
+  border-bottom: 1px solid var(--inverse-border-default);
 }
 
 .purpose-checklist li:last-child {

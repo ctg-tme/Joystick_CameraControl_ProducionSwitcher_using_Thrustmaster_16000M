@@ -365,12 +365,39 @@ describe('configurator workflow presentation', () => {
   });
 
   it('uses complete Magnetic dark tokens and inverse text tokens on the dark hero', async () => {
-    const styles = await readFile(new URL('./styles.css', import.meta.url), 'utf8');
+    const [styles, themeVariables] = await Promise.all([
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+      readFile(new URL('./vendor/magnetic/token-theme-variables.css', import.meta.url), 'utf8'),
+    ]);
 
-    expect(styles).toContain('--interact-border-weak-default: #656c75;');
-    expect(styles).toContain('--overlay-bg-default: #000000bf;');
+    const darkTheme = themeVariables.slice(
+      themeVariables.indexOf('[data-cds-theme="magnetic-dark"]'),
+      themeVariables.indexOf('[data-cds-theme="magnetic-light"]'),
+    );
+    expect(darkTheme).toContain('--interact-border-weak-default: #656c75;');
+    expect(darkTheme).toContain('--overlay-bg-default: #000000b2;');
     expect(styles).toMatch(/\.hero-read-more a,[\s\S]*?color: var\(--inverse-text-default\);/);
     expect(styles).not.toMatch(/\.hero-read-more a,[^{]*\{[^}]*color: var\(--interact-bg-/s);
+  });
+
+  it('uses the current Magnetic theme asset and semantic inverse surfaces on the Introduction page', async () => {
+    const [appSource, mainSource, styles, themeVariables, vendorReadme] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./main.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+      readFile(new URL('./vendor/magnetic/token-theme-variables.css', import.meta.url), 'utf8'),
+      readFile(new URL('./vendor/magnetic/README.md', import.meta.url), 'utf8'),
+    ]);
+
+    expect(appSource).toContain('document.documentElement.dataset.cdsTheme = `magnetic-${effectiveTheme}`;');
+    expect(mainSource).toContain("import './vendor/magnetic/token-theme-variables.css';");
+    expect(themeVariables).toContain('[data-cds-theme="magnetic-light"]');
+    expect(themeVariables).toContain('[data-cds-theme="magnetic-dark"]');
+    expect(vendorReadme).toContain('token-theme-variables.css');
+    expect(styles).toMatch(/\.hero \{[\s\S]*?var\(--inverse-bg-gradient-default\);/);
+    expect(styles).toMatch(/\.installation-paths article \{[\s\S]*?background: var\(--inverse-bg-weak-default\);/);
+    expect(styles).not.toContain('rgb(15 18 20 / 34%)');
+    expect(styles).not.toMatch(/:root\[data-theme="dark"\] \{[\s\S]*?--base-bg-default:/);
   });
 
   it('shows accessible configuration definitions from information icons', async () => {

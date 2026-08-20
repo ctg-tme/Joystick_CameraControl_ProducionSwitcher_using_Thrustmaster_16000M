@@ -168,7 +168,7 @@ The Vite base is relative so the built app works from a repository subpath. The 
 ## Design system
 
 The page uses a framework-free adaptation of Cisco's Magnetic Common Design
-System. The generated light-theme variables are vendored unchanged under
+System. The generated multi-theme variables are vendored unchanged under
 `src/vendor/magnetic`, with their upstream MIT license and source revision.
 Local component and print styling in `src/styles.css` consumes those tokens and
 adds a persisted System, Light, and Dark selector.

@@ -291,6 +291,7 @@ export class ConfiguratorApp {
       ? (this.systemTheme.matches ? 'dark' : 'light')
       : this.themePreference;
     document.documentElement.dataset.theme = effectiveTheme;
+    document.documentElement.dataset.cdsTheme = `magnetic-${effectiveTheme}`;
     document.documentElement.dataset.themePreference = this.themePreference;
     document.documentElement.style.colorScheme = effectiveTheme;
   }
