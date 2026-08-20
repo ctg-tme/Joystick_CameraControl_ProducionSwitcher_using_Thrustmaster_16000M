@@ -1,6 +1,14 @@
 # Joystick Camera Control Production Switcher
 
-Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a simple Main/Preview production workflow without a separate control computer.
+Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a simple Main/Preview production workflow without a separate control computer. This solution is purpose-built for the **Thrustmaster T.16000M** and its specific buttons, axes, and left/right-handed hardware modes; it is not a generic USB-joystick integration.
+
+## Start with the Web Installer
+
+### [Open the hosted Web Installer →](https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/)
+
+The guided Web Installer is the fastest way to configure one to four cameras, assign every T.16000M button, install or update both required RoomOS macros, and download a room-specific PDF operator guide. You can start fresh, upload an existing macro, or fetch the installed configuration from a verified device.
+
+For device checks, security behavior, and deployment details, see [Web Installer configuration and installation](docs/web-tool-installation.md). A complete [manual configuration](#configure-the-solution-macro-manually) and [manual installation](#install-the-macros-manually) path is also available below.
 
 ![An operator controlling a camera with the Thrustmaster T.16000M at InfoComm 2026](docs/images/infocomm-2026-joystick-demo.png)
 
@@ -8,13 +16,14 @@ _The joystick camera-control experience demonstrated at InfoComm 2026._
 
 ## What this solution offers
 
-- **Direct camera control** — pan, tilt, and zoom a Cisco camera from a USB joystick connected to the RoomOS device.
+- **Direct camera control** — pan, tilt, and zoom a Cisco camera from a Thrustmaster T.16000M connected directly to the RoomOS device over USB.
 - **Production switching** — send a camera directly to **Main** (live) or stage it on **Preview** before swapping it to Main.
 - **Up to four camera sources** — give each camera a readable name and a dedicated selection button.
 - **Custom RoomOS controls** — enable or disable joystick operation, match the joystick's handedness switch, and check the live operating state from the touch controller.
 - **Configurable button actions** — assign camera selection, Main/Preview control, source swapping, Precision Mode, and selfview actions to the 16 physical buttons.
 - **Operator safeguards** — joystick control starts disabled, automatic tracking is suspended before manual control begins, and unexpected SpeakerTrack activation produces an on-screen warning.
-- **Printable room guide** — the optional Web Tool can generate a one-page operator guide for the room's exact configuration.
+- **Printable room guide** — the Web Installer can generate a one-page operator guide for the room's exact configuration.
+- **A foundation to extend** — fork the project to add room-specific actions, production workflows, UI, or integrations.
 
 In this project, **Main** is the camera source currently live to the audience. **Preview** is the camera staged on a dedicated local display. The **Controlled Camera** is the physical camera that responds to joystick movement; it can currently occupy either role.
 
@@ -197,7 +206,7 @@ The macro validates this configuration at startup and reports a clear initializa
 
 ## Install the macros manually
 
-This is the primary installation path. No browser installer is required.
+Use this path when you prefer direct control of the macro source or cannot use the Web Installer.
 
 1. Download this repository's [solution macro](Joystick_CameraControl_ProductionSwitcher.js).
 2. Download [`Thrustmaster_16000M-Class.js`](https://github.com/ctg-tme/Thrustmaster_16000M-InputDevice-Class/blob/main/Thrustmaster_16000M-Class.js) from the separate InputDevice class project.
@@ -212,19 +221,33 @@ This is the primary installation path. No browser installer is required.
 
 The solution macro automatically enables RoomOS joystick input and installs or updates its touch-panel UI each time it starts. Look for `Joystick Ready with Pan/Tilt/Zoom` in the macro logs to confirm successful initialization.
 
-## Advanced: configure and install with the Web Tool
+## Web Installer details
 
-The optional browser configurator can discover an installed configuration, guide button assignments, install or update both macros, and generate a configuration-specific PDF operator guide. Its device workflow restarts the RoomOS macro runtime and is intended for advanced deployments.
+The browser configurator can discover an installed configuration, guide button assignments, install or update both macros, and generate a configuration-specific PDF operator guide. Its device workflow restarts the RoomOS macro runtime, so review the advanced deployment details before connecting to a production device.
 
-See [Web Tool configuration and installation](docs/web-tool-installation.md) for the hosted tool, device checks, security behavior, operator-guide generation, and local development instructions.
+See [Web Installer configuration and installation](docs/web-tool-installation.md) for device checks, security behavior, operator-guide generation, and local development instructions.
+
+## Fork and expand the project
+
+This project is intended to be a practical starting point, not a closed appliance. [Fork the repository](https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/fork) and adapt it to the production needs of your rooms.
+
+Possible extensions include:
+
+- new `ButtonAction` handlers for room controls or production tasks;
+- additional switching workflows and external video-system integrations;
+- alternate status pages and operator-facing RoomOS controls;
+- site-specific camera presets, layouts, and automation;
+- support for other input hardware through a purpose-built InputDevice class and mapping layer.
+
+Keep hardware-specific input handling separate from the production-switcher behavior so a new controller can be added without weakening the T.16000M experience. Reusable fixes and extensions are welcome as upstream contributions.
 
 ## Project contents
 
 | Path | Purpose |
 |---|---|
 | [Joystick_CameraControl_ProductionSwitcher.js](Joystick_CameraControl_ProductionSwitcher.js) | The configurable RoomOS solution macro and self-installed Joystick Controls panel. |
-| [docs/web-tool-installation.md](docs/web-tool-installation.md) | Advanced browser configuration, installation, and update workflow. |
-| [installer/](installer/) | Source for the optional browser Web Tool. |
+| [docs/web-tool-installation.md](docs/web-tool-installation.md) | Advanced Web Installer configuration, installation, and update workflow. |
+| [installer/](installer/) | Source for the hosted Web Installer. |
 | [output/pdf/Joystick_CameraControl_User_Manual.pdf](output/pdf/Joystick_CameraControl_User_Manual.pdf) | Representative generated operator guide. |
 | [Guides/thrustmaster16000m-camera-guide.html](Guides/thrustmaster16000m-camera-guide.html) | Original extracted control reference. |
 | [CONTEXT.md](CONTEXT.md) | Canonical operator terminology and project context. |

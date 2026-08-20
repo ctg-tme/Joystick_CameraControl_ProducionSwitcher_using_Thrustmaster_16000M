@@ -1,12 +1,12 @@
-# Web Tool configuration and installation
+# Web Installer configuration and installation
 
-The Web Tool is an optional advanced workflow for configuring the joystick solution, installing or updating both RoomOS macros, and creating a printable operator guide. Manual configuration and installation remain documented in the main [README](../README.md#configure-the-solution-macro-manually).
+The Web Installer is the guided workflow for configuring the joystick solution, installing or updating both RoomOS macros, and creating a printable operator guide. This document covers its advanced device and deployment details. Manual configuration and installation remain documented in the main [README](../README.md#configure-the-solution-macro-manually).
 
 Open the hosted tool at:
 
-[Joystick Camera Control Production Switcher Web Tool](https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/)
+[Joystick Camera Control Production Switcher Web Installer](https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/)
 
-## When to use the Web Tool
+## When to use the Web Installer
 
 Use it when you want to:
 
@@ -85,7 +85,7 @@ The browser caches only the device address and administrator username. It does n
 
 ## Direct installation and update behavior
 
-After verification and confirmation, the Web Tool:
+After verification and confirmation, the Web Installer:
 
 1. retrieves the current `Thrustmaster_16000M-Class.js` source from its separate repository;
 2. saves that dependency with the exact macro name `Thrustmaster_16000M-Class` and leaves it inactive;
@@ -111,7 +111,7 @@ The Review page generates a real PDF locally in the browser. The guide is exactl
 
 When Preview is off, the guide marks Preview and Swap actions unavailable and uses a Main-only operating workflow. The PDF embeds its source assets and does not depend on remote images, fonts, a print dialog, or server-side generation.
 
-## Run the Web Tool locally
+## Run the Web Installer locally
 
 The tool is a Vite application under `installer/`.
 
