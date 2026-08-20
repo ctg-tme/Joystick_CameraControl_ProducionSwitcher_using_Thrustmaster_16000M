@@ -20,12 +20,16 @@ The camera whose pan, tilt, and zoom respond to joystick movement; it is associa
 _Avoid_: Selected camera, active camera
 
 **Camera Source**:
-A selectable RoomOS video input associated with a camera control target. Its ConnectorId is unique within the configuration, while multiple Camera Sources may share the same ControlId.
+A selectable RoomOS video input that may be associated with a camera control target. Its ConnectorId is unique within the configuration, while multiple Camera Sources may share the same ControlId.
 _Avoid_: Physical camera
 
 **Discovered Camera Source**:
 A camera-capable video input reported by a device through a Verified Device Connection and offered for addition to the configuration.
 _Avoid_: Discovered physical camera
+
+**Video-only Camera Source**:
+A Camera Source without a camera control target. It can be routed to Main or Preview but cannot respond to joystick pan, tilt, or zoom movement.
+_Avoid_: Disconnected camera, uncontrolled camera
 
 **Swap**:
 An exchange of the Main and Preview camera sources without changing which physical camera is currently controlled. The Control Method changes to the controlled camera's new role: Preview becomes Live, or Live becomes Preview.
