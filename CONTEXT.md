@@ -19,6 +19,14 @@ The local screen used to view and frame the staged Preview source before sending
 The camera whose pan, tilt, and zoom respond to joystick movement; it is associated with either Main or Preview.
 _Avoid_: Selected camera, active camera
 
+**Camera Source**:
+A selectable RoomOS video input associated with a camera control target. Its ConnectorId is unique within the configuration, while multiple Camera Sources may share the same ControlId.
+_Avoid_: Physical camera
+
+**Discovered Camera Source**:
+A camera-capable video input reported by a device through a Verified Device Connection and offered for addition to the configuration.
+_Avoid_: Discovered physical camera
+
 **Swap**:
 An exchange of the Main and Preview camera sources without changing which physical camera is currently controlled. The Control Method changes to the controlled camera's new role: Preview becomes Live, or Live becomes Preview.
 _Avoid_: Cut, take
