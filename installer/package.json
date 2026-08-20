@@ -8,10 +8,12 @@
     "prepare:assets": "node scripts/prepare-assets.mjs",
     "dev": "npm run prepare:assets && vite --host 127.0.0.1 --port 5177",
     "build": "npm run prepare:assets && tsc --noEmit && vite build",
-    "test": "npm run prepare:assets && vitest run"
+    "test": "npm run prepare:assets && vitest run",
+    "fixtures:operator-guide": "node scripts/generate-operator-guide-fixtures.mjs"
   },
   "dependencies": {
-    "jsxapi": "^6.0.0"
+    "jsxapi": "^6.0.0",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

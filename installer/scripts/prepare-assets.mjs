@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const installerRoot = resolve(import.meta.dirname, '..');
@@ -26,7 +26,6 @@ const versionMatch = macroSource.match(/\*\s+Version:\s+([^\s]+)/);
 if (!versionMatch) throw new Error('Unable to determine the macro version');
 
 await mkdir(outputDirectory, { recursive: true });
-await rm(resolve(outputDirectory, 'Joystick_CameraControl_User_Manual.html'), { force: true });
 await Promise.all([
   writeFile(resolve(outputDirectory, macroFileName), macroSource),
   writeFile(resolve(outputDirectory, 'thrustmaster-t16000m.png'), joystickImage),

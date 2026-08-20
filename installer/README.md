@@ -4,7 +4,7 @@ This Vite application has three jobs:
 
 1. configure one to four cameras and all 16 physical buttons;
 2. recover, generate, or directly install a configured RoomOS macro;
-3. provide the illustrated user manual as a standalone download.
+3. generate a configuration-specific, single-page PDF operator guide for download.
 
 The interface is organized as Introduction, Macro Settings, Button Assignments,
 and Review and Installation. Introduction offers a fresh configuration, local
@@ -31,15 +31,24 @@ Other commands:
 ```sh
 npm test
 npm run build
+npm run fixtures:operator-guide
 ```
+
+`fixtures:operator-guide` writes the three visual-regression PDFs under
+`../tmp/pdfs/operator-guide-fixtures` and updates the representative PDF under
+`../output/pdf`. Use Poppler `pdfinfo` and `pdftoppm` to verify and render them.
 
 `prepare:assets` runs automatically before development, tests, and builds. It:
 
 - validates the macro configuration markers and JavaScript syntax;
 - copies the current macro into ignored `public/assets`;
-- copies the standalone user manual into ignored `public/assets`;
-- extracts the joystick diagram from the existing guide;
+- copies the joystick diagram into ignored `public/assets`;
 - records the macro hash and external dependency URL in `source-manifest.json`.
+
+The operator guide is generated on demand with `pdf-lib`; it is not a browser
+printout or an HTML file renamed as PDF. The bundled joystick diagram and the
+preserved RoomOS enablement screenshot under `src/assets` are embedded directly
+in the PDF, so generation has no runtime network dependency.
 
 Generated `public/assets` and `dist` files are not committed.
 

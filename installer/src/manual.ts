@@ -1,27 +1,488 @@
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from 'pdf-lib';
 import joystickImageDataUrl from './assets/thrustmaster-t16000m.png?inline';
+import enablementImageDataUrl from './assets/joystick-controls-enabled-crop.jpg?inline';
+import { PHYSICAL_BUTTONS, type ActionCategory, type ConfiguratorState } from './model';
 import {
-  BUILT_IN_ACTIONS,
-  PHYSICAL_BUTTONS,
-  assignmentActionId,
-  assignmentCameraId,
-  builtInAssignment,
-  cameraAssignment,
-  cameraButtonActions,
-  logicalButtonId,
-  type ActionCategory,
-  type ConfiguratorState,
-} from './model';
+  createOperatorGuideModel,
+  operatorGuideFileName,
+  type OperatorGuideModel,
+} from './operator-guide-model';
 
-export interface ConfiguredUserManual {
+export interface ConfiguredOperatorGuide {
   fileName: string;
-  html: string;
+  mimeType: 'application/pdf';
+  bytes: Uint8Array;
 }
 
-interface AssignmentDetails {
-  label: string;
-  description: string;
-  category: ActionCategory;
-  buttonAction: string;
+const PAGE_WIDTH = 792;
+const PAGE_HEIGHT = 612;
+const MARGIN = 24;
+
+const COLORS = {
+  ink: rgb(0.07, 0.11, 0.16),
+  muted: rgb(0.31, 0.37, 0.43),
+  faint: rgb(0.93, 0.95, 0.97),
+  line: rgb(0.82, 0.85, 0.89),
+  white: rgb(1, 1, 1),
+  main: rgb(0.15, 0.39, 0.78),
+  preview: rgb(0.06, 0.46, 0.43),
+  camera: rgb(0.18, 0.49, 0.2),
+  motion: rgb(0.43, 0.24, 0.76),
+  selfview: rgb(0.66, 0.38, 0.03),
+  unused: rgb(0.42, 0.47, 0.52),
+  warning: rgb(0.73, 0.34, 0.04),
+  warningFill: rgb(1, 0.96, 0.88),
+} as const;
+
+const CATEGORY_COLORS: Record<ActionCategory, RGB> = {
+  main: COLORS.main,
+  preview: COLORS.preview,
+  camera: COLORS.camera,
+  motion: COLORS.motion,
+  selfview: COLORS.selfview,
+  unused: COLORS.unused,
+};
+
+interface GuideFonts {
+  regular: PDFFont;
+  bold: PDFFont;
+}
+
+function bytesFromDataUrl(dataUrl: string): Uint8Array {
+  const comma = dataUrl.indexOf(',');
+  if (comma < 0 || !dataUrl.slice(0, comma).includes(';base64')) {
+    throw new Error('Operator guide image asset is not a base64 data URL');
+  }
+  const decoded = atob(dataUrl.slice(comma + 1));
+  return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+}
+
+function ellipsize(text: string, font: PDFFont, size: number, maxWidth: number): string {
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+  const suffix = '...';
+  let value = text;
+  while (value && font.widthOfTextAtSize(`${value}${suffix}`, size) > maxWidth) {
+    value = value.slice(0, -1);
+  }
+  return `${value.trimEnd()}${suffix}`;
+}
+
+function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+      line = candidate;
+    } else if (line) {
+      lines.push(line);
+      line = font.widthOfTextAtSize(word, size) <= maxWidth
+        ? word
+        : ellipsize(word, font, size, maxWidth);
+    } else {
+      lines.push(ellipsize(word, font, size, maxWidth));
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawWrappedText(
+  page: PDFPage,
+  text: string,
+  options: {
+    x: number;
+    y: number;
+    width: number;
+    font: PDFFont;
+    size: number;
+    lineHeight?: number;
+    color?: RGB;
+    maxLines?: number;
+  },
+): number {
+  const lineHeight = options.lineHeight ?? options.size * 1.25;
+  const maxLines = options.maxLines ?? Number.POSITIVE_INFINITY;
+  const lines = wrapText(text, options.font, options.size, options.width);
+  const visible = lines.slice(0, maxLines);
+  if (lines.length > maxLines && visible.length) {
+    visible[visible.length - 1] = ellipsize(
+      `${visible[visible.length - 1]} ${lines[maxLines] ?? ''}`,
+      options.font,
+      options.size,
+      options.width,
+    );
+  }
+  visible.forEach((line, index) => {
+    page.drawText(line, {
+      x: options.x,
+      y: options.y - index * lineHeight,
+      font: options.font,
+      size: options.size,
+      color: options.color ?? COLORS.ink,
+    });
+  });
+  return options.y - visible.length * lineHeight;
+}
+
+function drawFittedText(
+  page: PDFPage,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  font: PDFFont,
+  size: number,
+  color: RGB = COLORS.ink,
+): void {
+  page.drawText(ellipsize(text, font, size, maxWidth), { x, y, font, size, color });
+}
+
+function drawSectionHeading(
+  page: PDFPage,
+  label: string,
+  x: number,
+  y: number,
+  width: number,
+  fonts: GuideFonts,
+): void {
+  drawFittedText(page, label.toUpperCase(), x, y, width, fonts.bold, 9.5, COLORS.ink);
+  page.drawLine({
+    start: { x, y: y - 5 },
+    end: { x: x + width, y: y - 5 },
+    thickness: 0.8,
+    color: COLORS.line,
+  });
+}
+
+function drawNumberBadge(
+  page: PDFPage,
+  number: number,
+  x: number,
+  y: number,
+  color: RGB,
+  fonts: GuideFonts,
+  radius = 6.3,
+): void {
+  page.drawCircle({ x, y, size: radius, color, borderColor: COLORS.white, borderWidth: 0.8 });
+  const label = String(number);
+  const size = number >= 10 ? 5.8 : 6.5;
+  const width = fonts.bold.widthOfTextAtSize(label, size);
+  page.drawText(label, {
+    x: x - width / 2,
+    y: y - size * 0.34,
+    font: fonts.bold,
+    size,
+    color: COLORS.white,
+  });
+}
+
+function drawHeader(page: PDFPage, model: OperatorGuideModel, fonts: GuideFonts): void {
+  page.drawRectangle({ x: 0, y: 536, width: PAGE_WIDTH, height: 76, color: COLORS.ink });
+  page.drawText('OPERATOR GUIDE', {
+    x: MARGIN,
+    y: 589,
+    font: fonts.bold,
+    size: 7.5,
+    color: rgb(0.59, 0.78, 0.96),
+  });
+  drawFittedText(page, model.projectName, MARGIN, 564, 470, fonts.bold, 20, COLORS.white);
+  drawFittedText(page, model.roomName, MARGIN, 547, 470, fonts.regular, 10.5, rgb(0.84, 0.88, 0.92));
+
+  page.drawRectangle({ x: 526, y: 550, width: 242, height: 43, color: rgb(0.12, 0.18, 0.25) });
+  page.drawText('HANDEDNESS', { x: 537, y: 580, font: fonts.bold, size: 6.4, color: rgb(0.59, 0.68, 0.77) });
+  page.drawText('PREVIEW', { x: 651, y: 580, font: fonts.bold, size: 6.4, color: rgb(0.59, 0.68, 0.77) });
+  drawFittedText(page, model.handedness, 537, 562, 103, fonts.bold, 10, COLORS.white);
+  drawFittedText(
+    page,
+    model.previewStatus,
+    651,
+    562,
+    106,
+    fonts.bold,
+    8.4,
+    model.previewEnabled ? rgb(0.52, 0.93, 0.79) : rgb(1, 0.72, 0.39),
+  );
+}
+
+function drawJoystickColumn(
+  page: PDFPage,
+  model: OperatorGuideModel,
+  fonts: GuideFonts,
+  joystickImage: Awaited<ReturnType<PDFDocument['embedPng']>>,
+): void {
+  const x = 24;
+  const width = 224;
+  drawSectionHeading(page, 'Joystick map', x, 517, width, fonts);
+
+  const imageWidth = 222;
+  const imageHeight = imageWidth * (556 / 440);
+  const imageX = x + 1;
+  const imageY = 218;
+  page.drawRectangle({ x: imageX, y: imageY, width: imageWidth, height: imageHeight, color: COLORS.white });
+  page.drawImage(joystickImage, { x: imageX, y: imageY, width: imageWidth, height: imageHeight });
+
+  for (const button of PHYSICAL_BUTTONS) {
+    const guideButton = model.buttons.find((candidate) => candidate.number === button.number);
+    if (!guideButton) continue;
+    drawNumberBadge(
+      page,
+      button.number,
+      imageX + (button.x / 100) * imageWidth,
+      imageY + (1 - button.y / 100) * imageHeight,
+      CATEGORY_COLORS[guideButton.category],
+      fonts,
+    );
+  }
+
+  const axisItems = [
+    ['PAN', model.motion.pan],
+    ['TILT', model.motion.tilt],
+    ['ZOOM', model.motion.zoom],
+  ] as const;
+  axisItems.forEach(([label, value], index) => {
+    const itemX = x + index * 74.5;
+    page.drawText(label, { x: itemX, y: 205, font: fonts.bold, size: 6.2, color: COLORS.muted });
+    drawFittedText(page, value, itemX, 194, 70, fonts.regular, 6.7, COLORS.ink);
+  });
+
+  const legend = [
+    ['Main', 'main'],
+    ['Preview', 'preview'],
+    ['Camera', 'camera'],
+    ['Motion / swap', 'motion'],
+    ['Selfview', 'selfview'],
+    ['No action', 'unused'],
+  ] as const;
+  legend.forEach(([label, category], index) => {
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    const itemX = x + column * 112;
+    const itemY = 171 - row * 14;
+    page.drawCircle({ x: itemX + 4, y: itemY + 3, size: 3.5, color: CATEGORY_COLORS[category] });
+    page.drawText(label, { x: itemX + 11, y: itemY, font: fonts.regular, size: 7, color: COLORS.muted });
+  });
+
+  page.drawRectangle({ x, y: 72, width, height: 52, color: COLORS.faint });
+  page.drawText('CONFIGURED MOTION', { x: x + 10, y: 109, font: fonts.bold, size: 6.5, color: COLORS.muted });
+  page.drawText(`Pan / tilt speed  ${model.motion.panTiltRampSpeed}`, { x: x + 10, y: 93, font: fonts.bold, size: 8, color: COLORS.ink });
+  page.drawText(`Zoom speed  ${model.motion.zoomRampSpeed}`, { x: x + 112, y: 93, font: fonts.bold, size: 8, color: COLORS.ink });
+  page.drawText(`Precision divides movement speed by ${model.motion.precisionDivisor}.`, {
+    x: x + 10,
+    y: 80,
+    font: fonts.regular,
+    size: 7.2,
+    color: COLORS.muted,
+  });
+  page.drawText('Thrustmaster T.16000M button and axis reference', {
+    x,
+    y: 48,
+    font: fonts.regular,
+    size: 6.5,
+    color: COLORS.muted,
+  });
+}
+
+function drawEnablementColumn(
+  page: PDFPage,
+  model: OperatorGuideModel,
+  fonts: GuideFonts,
+  enablementImage: Awaited<ReturnType<PDFDocument['embedJpg']>>,
+): void {
+  const x = 260;
+  const width = 244;
+  drawSectionHeading(page, model.enablement.heading, x, 517, width, fonts);
+
+  const imageHeight = width * (315 / 840);
+  page.drawImage(enablementImage, { x, y: 405, width, height: imageHeight });
+  page.drawText('RoomOS location example - Enabled control only', {
+    x,
+    y: 395,
+    font: fonts.regular,
+    size: 6.6,
+    color: COLORS.muted,
+  });
+
+  let y = 377;
+  model.enablement.steps.forEach((step, index) => {
+    page.drawCircle({ x: x + 7, y: y + 3, size: 6.2, color: COLORS.ink });
+    const number = String(index + 1);
+    const numberWidth = fonts.bold.widthOfTextAtSize(number, 6.5);
+    page.drawText(number, {
+      x: x + 7 - numberWidth / 2,
+      y: y + 0.7,
+      font: fonts.bold,
+      size: 6.5,
+      color: COLORS.white,
+    });
+    y = drawWrappedText(page, step, {
+      x: x + 19,
+      y: y + 1,
+      width: width - 19,
+      font: fonts.regular,
+      size: 8.6,
+      lineHeight: 10.4,
+      maxLines: 2,
+    }) - 8;
+  });
+
+  page.drawRectangle({ x, y: 249, width, height: 55, color: COLORS.warningFill });
+  page.drawRectangle({ x, y: 249, width: 4, height: 55, color: COLORS.warning });
+  page.drawText('TRACKING WARNING', { x: x + 12, y: 289, font: fonts.bold, size: 6.7, color: COLORS.warning });
+  drawWrappedText(page, model.enablement.trackingWarning, {
+    x: x + 12,
+    y: 276,
+    width: width - 23,
+    font: fonts.regular,
+    size: 7.8,
+    lineHeight: 9.6,
+    maxLines: 3,
+  });
+
+  page.drawText(model.previewEnabled ? 'OPERATING WORKFLOW' : 'OPERATING WORKFLOW - PREVIEW OFF', {
+    x,
+    y: 230,
+    font: fonts.bold,
+    size: 7.4,
+    color: model.previewEnabled ? COLORS.ink : COLORS.warning,
+  });
+  let workflowY = 214;
+  model.workflow.forEach((step, index) => {
+    page.drawText(`${index + 1}.`, { x, y: workflowY, font: fonts.bold, size: 7.6, color: COLORS.ink });
+    const after = drawWrappedText(page, step, {
+      x: x + 14,
+      y: workflowY,
+      width: width - 14,
+      font: fonts.regular,
+      size: 7.6,
+      lineHeight: 9,
+      maxLines: 2,
+    });
+    workflowY = after - 4;
+  });
+
+  page.drawRectangle({ x, y: 49, width, height: 36, color: COLORS.faint });
+  drawWrappedText(page, `${model.handedness} room. ${model.enablement.enableResult}`, {
+    x: x + 10,
+    y: 71,
+    width: width - 20,
+    font: fonts.bold,
+    size: 7.2,
+    lineHeight: 9,
+    maxLines: 2,
+  });
+}
+
+function drawButtonRow(
+  page: PDFPage,
+  model: OperatorGuideModel,
+  buttonIndex: number,
+  x: number,
+  y: number,
+  width: number,
+  fonts: GuideFonts,
+): void {
+  const button = model.buttons[buttonIndex];
+  if (!button) return;
+  page.drawLine({
+    start: { x, y: y - 5 },
+    end: { x: x + width, y: y - 5 },
+    thickness: 0.35,
+    color: COLORS.line,
+  });
+  drawNumberBadge(page, button.number, x + 7, y + 3, CATEGORY_COLORS[button.category], fonts, 5.7);
+  drawFittedText(
+    page,
+    button.action,
+    x + 18,
+    y,
+    width - 18,
+    button.available ? fonts.bold : fonts.regular,
+    7.4,
+    button.available ? COLORS.ink : COLORS.warning,
+  );
+}
+
+function drawButtonColumn(page: PDFPage, model: OperatorGuideModel, fonts: GuideFonts): void {
+  const x = 516;
+  const width = 252;
+  drawSectionHeading(page, 'All 16 button assignments', x, 517, width, fonts);
+
+  page.drawText('BUTTONS 1-8', { x, y: 498, font: fonts.bold, size: 6.5, color: COLORS.muted });
+  for (let index = 0; index < 8; index += 1) {
+    drawButtonRow(page, model, index, x, 481 - index * 19.5, width, fonts);
+  }
+  page.drawText('BUTTONS 9-16', { x, y: 319, font: fonts.bold, size: 6.5, color: COLORS.muted });
+  for (let index = 8; index < 16; index += 1) {
+    drawButtonRow(page, model, index, x, 302 - (index - 8) * 19.5, width, fonts);
+  }
+
+  page.drawRectangle({ x, y: 45, width, height: 92, color: COLORS.faint });
+  page.drawText('CONFIGURED CAMERAS', { x: x + 10, y: 122, font: fonts.bold, size: 6.7, color: COLORS.muted });
+  model.cameras.slice(0, 4).forEach((camera, index) => {
+    const rowY = 105 - index * 18;
+    const buttonLabel = camera.buttonNumbers.length ? `Button ${camera.buttonNumbers.join(', ')}` : 'Not assigned';
+    drawFittedText(
+      page,
+      `${camera.name}${camera.isDefault ? ' (default)' : ''}`,
+      x + 10,
+      rowY,
+      166,
+      fonts.bold,
+      7.4,
+    );
+    drawFittedText(page, buttonLabel, x + 180, rowY, 62, fonts.regular, 7, COLORS.muted);
+  });
+}
+
+function renderOperatorGuidePage(
+  page: PDFPage,
+  model: OperatorGuideModel,
+  fonts: GuideFonts,
+  joystickImage: Awaited<ReturnType<PDFDocument['embedPng']>>,
+  enablementImage: Awaited<ReturnType<PDFDocument['embedJpg']>>,
+): void {
+  drawHeader(page, model, fonts);
+  page.drawLine({ start: { x: 254, y: 44 }, end: { x: 254, y: 522 }, thickness: 0.6, color: COLORS.line });
+  page.drawLine({ start: { x: 510, y: 44 }, end: { x: 510, y: 522 }, thickness: 0.6, color: COLORS.line });
+  drawJoystickColumn(page, model, fonts, joystickImage);
+  drawEnablementColumn(page, model, fonts, enablementImage);
+  drawButtonColumn(page, model, fonts);
+  page.drawText('Keep this guide in the room for operators.', {
+    x: 516,
+    y: 27,
+    font: fonts.regular,
+    size: 6.5,
+    color: COLORS.muted,
+  });
+}
+
+/** Generates a configuration-specific, one-page US Letter landscape PDF. */
+export async function generateConfiguredOperatorGuide(
+  state: ConfiguratorState,
+): Promise<ConfiguredOperatorGuide> {
+  const model = createOperatorGuideModel(state);
+  const document = await PDFDocument.create();
+  document.setTitle(`${model.projectName} - ${model.roomName} - Operator Guide`);
+  document.setSubject('Configured Thrustmaster T.16000M operator quick reference');
+  document.setCreator('Joystick Camera Control Macro Web Installer');
+  document.setProducer('pdf-lib');
+
+  const [regular, bold, joystickImage, enablementImage] = await Promise.all([
+    document.embedFont(StandardFonts.Helvetica),
+    document.embedFont(StandardFonts.HelveticaBold),
+    document.embedPng(bytesFromDataUrl(joystickImageDataUrl)),
+    document.embedJpg(bytesFromDataUrl(enablementImageDataUrl)),
+  ]);
+  const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  renderOperatorGuidePage(page, model, { regular, bold }, joystickImage, enablementImage);
+
+  return {
+    fileName: operatorGuideFileName(state),
+    mimeType: 'application/pdf',
+    bytes: await document.save({ useObjectStreams: false }),
+  };
 }
 
 function escapeHtml(value: unknown): string {
@@ -33,267 +494,28 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#039;');
 }
 
-function assignmentDetails(state: ConfiguratorState, assignment: string): AssignmentDetails {
-  const actionId = assignmentActionId(assignment);
-  if (actionId !== undefined) {
-    const action = BUILT_IN_ACTIONS.find((candidate) => candidate.id === actionId);
-    if (action) {
-      return {
-        label: action.label,
-        description: action.description,
-        category: action.category,
-        buttonAction: action.id || "''",
-      };
-    }
-  }
-
-  const camera = state.cameras.find((candidate) => candidate.id === assignmentCameraId(assignment));
-  if (camera) {
-    return {
-      label: camera.Name || 'Unnamed camera',
-      description: `Selects ${camera.Name || 'this camera'} for the active Main or Preview target.`,
-      category: 'camera',
-      buttonAction: cameraButtonActions(state.cameras).get(camera.id) ?? 'SelectCamera',
-    };
-  }
-
-  return {
-    label: 'Invalid assignment',
-    description: 'This assignment could not be resolved.',
-    category: 'unused',
-    buttonAction: 'Invalid',
-  };
-}
-
-function assignedButtonNumbers(state: ConfiguratorState, actionId: string): number[] {
-  const assignment = builtInAssignment(actionId);
-  return PHYSICAL_BUTTONS
-    .filter((button) => state.assignments[button.number] === assignment)
-    .map((button) => button.number);
-}
-
-function buttonBadges(numbers: number[], category: ActionCategory): string {
-  if (!numbers.length) return '<span class="badge unused">Not assigned</span>';
-  return numbers.map((number) => `<span class="badge ${category}">${number}</span>`).join(' ');
-}
-
-function buttonChips(numbers: number[], category: ActionCategory): string {
-  if (!numbers.length) return '<span class="chip unused">Not assigned</span>';
-  return numbers.map((number) => `<span class="chip ${category}">${number}</span>`).join('');
-}
-
-function manualFileName(state: ConfiguratorState): string {
-  const identity = [state.projectName, state.roomName]
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .join('-') || 'Joystick-Camera-Control';
-  const safeIdentity = identity
-    .normalize('NFKD')
-    .replace(/[^A-Za-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 100) || 'Joystick-Camera-Control';
-  return `${safeIdentity}-User-Manual.html`;
-}
-
-function renderDiagram(
-  state: ConfiguratorState,
-  imageSource: string,
-  interactive = false,
-  showAxisBadges = false,
-): string {
-  return `<div class="diagram" aria-label="Configured Thrustmaster T.16000M button diagram">
-    <img src="${imageSource}" alt="Thrustmaster T.16000M physical button and axis reference">
-    ${PHYSICAL_BUTTONS.map((button) => {
-      const details = assignmentDetails(state, state.assignments[button.number]);
-      const tag = interactive ? 'button' : 'span';
-      const attributes = interactive
-        ? `type="button" data-focus-button="${button.number}"`
-        : '';
-      return `<${tag} class="pin ${details.category}" ${attributes} style="left:${button.x}%;top:${button.y}%;" title="Button ${button.number}: ${escapeHtml(details.label)}">${button.number}</${tag}>`;
-    }).join('')}
-    ${showAxisBadges ? '<span class="axis-badge tilt">Tilt</span><span class="axis-badge pan">Pan</span><span class="axis-badge zoom">Zoom</span>' : ''}
-  </div>`;
-}
-
-function renderActionMapping(
-  state: ConfiguratorState,
-  actionId: string,
-  label: string,
-  category: ActionCategory,
-  extra = '',
-): string {
-  return `<article><h3>${escapeHtml(label)}</h3><div>${buttonBadges(assignedButtonNumbers(state, actionId), category)}</div>${extra ? `<p>${escapeHtml(extra)}</p>` : ''}</article>`;
-}
-
-function previewGuidance(state: ConfiguratorState): string {
-  if (state.previewMode === 'Off') {
-    return `Preview Display mode is Off. Preview output ${state.previewOutput} remains configured but inactive. Control Preview, Swap Main and Preview, and camera selections made while Preview is the target are ignored until Preview Display mode is On.`;
-  }
-  return `Preview Display mode is On and uses video output ${state.previewOutput}. Choose Control Preview, select and frame the next camera, then use Swap Main and Preview to take it live.`;
-}
-
-function printQuickOperation(state: ConfiguratorState): string {
-  if (state.previewMode === 'Off') {
-    return '<strong>1.</strong> Choose Main; Preview controls and swaps are ignored while Preview is Off. <strong>2.</strong> Choose a camera. <strong>3.</strong> Tilt with stick pitch, pan with twist, and zoom with mini-stick pitch. <strong>4.</strong> Use Precision mode for fine framing.';
-  }
-  return '<strong>1.</strong> Choose Main or Preview. <strong>2.</strong> Choose a camera. <strong>3.</strong> Tilt with stick pitch, pan with twist, and zoom with mini-stick pitch. <strong>4.</strong> Frame Preview, then swap it live; joystick control follows that camera into its Live role.';
-}
-
-/**
- * Generates the complete configured room handoff manual. The returned HTML has
- * no network, stylesheet, font, script, or image dependencies.
- */
-export function generateConfiguredUserManual(state: ConfiguratorState): ConfiguredUserManual {
-  const cameraActions = cameraButtonActions(state.cameras);
-  const projectName = state.projectName.trim() || 'Joystick Camera Control';
-  const roomName = state.roomName.trim() || 'Room';
-  const previewText = previewGuidance(state);
-  const previewUnavailable = state.previewMode === 'Off'
-    ? 'Ignored while Preview Display mode is Off.'
-    : '';
-
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(projectName)} · ${escapeHtml(roomName)} · User Manual</title>
-  <style>
-    :root { --ink:#17212b; --muted:#586776; --line:#d7dee5; --paper:#f4f6f8; --panel:#fff; --main:#2563eb; --preview:#0f766e; --camera:#2f7d32; --motion:#6f3cc3; --selfview:#a96207; --unused:#6b7785; }
-    * { box-sizing:border-box; }
-    body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    main { width:min(1180px,calc(100vw - 32px)); margin:0 auto; padding:32px 0 48px; }
-    h1,h2,h3,p { margin-top:0; } h1 { font-size:clamp(30px,5vw,48px); line-height:1.05; margin-bottom:10px; } h2 { font-size:22px; margin-bottom:14px; } h3 { font-size:15px; margin-bottom:8px; }
-    .eyebrow { display:block; color:#335e87; font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px; }
-    .lede { color:var(--muted); font-size:17px; max-width:850px; }
-    .summary,.layout,.mapping-grid { display:grid; gap:16px; } .summary { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); margin:24px 0; } .summary div,.panel,.mapping-grid article { background:var(--panel); border:1px solid var(--line); border-radius:9px; }
-    .summary div { padding:14px; } .summary dt { color:var(--muted); font-size:12px; text-transform:uppercase; } .summary dd { margin:3px 0 0; font-weight:750; }
-    .callout { padding:16px 18px; border-left:5px solid ${state.previewMode === 'Off' ? '#b7791f' : 'var(--preview)'}; background:#fff; margin-bottom:22px; }
-    .layout { grid-template-columns:minmax(330px,440px) minmax(0,1fr); align-items:start; } .panel { padding:18px; margin-bottom:18px; overflow:hidden; }
-    .diagram { position:relative; width:100%; aspect-ratio:440/556; background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-    .diagram img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
-    .pin { position:absolute; width:27px; height:27px; transform:translate(-50%,-50%); border-radius:99px; color:#fff; font-weight:800; font-size:13px; line-height:23px; text-align:center; border:2px solid #fff; box-shadow:0 0 0 2px var(--ink),0 5px 12px #0004; z-index:2; }
-    .main { background:var(--main); } .preview { background:var(--preview); } .camera { background:var(--camera); } .motion { background:var(--motion); } .selfview { background:var(--selfview); } .unused { background:var(--unused); }
-    .mapping-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .mapping-grid article { padding:13px; } .mapping-grid article p { color:var(--muted); font-size:13px; margin:8px 0 0; }
-    .badge { display:inline-grid; min-width:28px; min-height:28px; place-items:center; padding:3px 8px; border-radius:99px; color:#fff; font-weight:800; font-size:12px; } .badge.unused { min-width:auto; }
-    table { width:100%; border-collapse:collapse; font-size:13px; } th,td { padding:9px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; } th { color:var(--muted); font-size:11px; text-transform:uppercase; } code { display:block; color:#44515e; font-size:11px; overflow-wrap:anywhere; margin-top:3px; }
-    .camera-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; } .camera-card { border:1px solid var(--line); border-radius:8px; padding:13px; } .camera-card dl { margin:8px 0 0; } .camera-card div { display:flex; justify-content:space-between; gap:12px; padding:3px 0; } .camera-card dt { color:var(--muted); } .camera-card dd { margin:0; font-weight:700; text-align:right; }
-    .footnote { color:var(--muted); font-size:12px; text-align:center; margin-top:24px; }
-    @media (max-width:850px) { .summary { grid-template-columns:repeat(2,1fr); } .layout { grid-template-columns:1fr; } }
-    @media print { body { background:#fff; } main { width:auto; padding:0; } .panel,.summary div,.mapping-grid article { box-shadow:none; break-inside:avoid; } .layout { grid-template-columns:38% 62%; } }
-  </style>
-</head>
-<body>
-<main>
-  <header>
-    <span class="eyebrow">Configured operator manual</span>
-    <h1>${escapeHtml(projectName)}</h1>
-    <p class="lede"><strong>${escapeHtml(roomName)}</strong> · Thrustmaster T.16000M camera control and production switching</p>
-  </header>
-  <dl class="summary">
-    <div><dt>Room</dt><dd>${escapeHtml(roomName)}</dd></div>
-    <div><dt>Handedness</dt><dd>${state.handedness === 'right' ? 'Right-handed' : 'Left-handed'} switch</dd></div>
-    <div><dt>Main on enable</dt><dd>${state.setDefaultCamera ? 'Default camera' : 'Unchanged'}</dd></div>
-    <div><dt>Preview mode</dt><dd>${escapeHtml(state.previewMode)}</dd></div>
-    <div><dt>Preview output</dt><dd>${state.previewOutput}${state.previewMode === 'Off' ? ' (inactive)' : ''}</dd></div>
-  </dl>
-  <div class="callout"><strong>${state.previewMode === 'Off' ? 'Preview is disabled' : 'Preview workflow'}</strong><p>${escapeHtml(previewText)}</p></div>
-  <div class="layout">
-    <aside>
-      <section class="panel"><h2>Physical control map</h2>${renderDiagram(state, joystickImageDataUrl)}</section>
-      <section class="panel"><h2>Action mappings</h2><div class="mapping-grid">
-        ${renderActionMapping(state, 'ControlMain', 'Control Main', 'main')}
-        ${renderActionMapping(state, 'ControlPreview', 'Control Preview', 'preview', previewUnavailable)}
-        ${renderActionMapping(state, 'PrecisionMode', 'Precision mode', 'motion')}
-        ${renderActionMapping(state, 'SwapMainPreview', 'Swap Main / Preview', 'motion', previewUnavailable)}
-        ${renderActionMapping(state, 'SelfviewWindowed', 'Selfview windowed', 'selfview')}
-        ${renderActionMapping(state, 'SelfviewFullscreen', 'Selfview fullscreen', 'selfview')}
-        ${renderActionMapping(state, 'SelfviewOff', 'Selfview off', 'selfview')}
-      </div></section>
-    </aside>
-    <div>
-      <section class="panel"><h2>All 16 button assignments</h2>
-        <table><thead><tr><th>#</th><th>Physical control</th><th>Logical ButtonId</th><th>ButtonAction</th><th>Operator result</th></tr></thead><tbody>
-          ${PHYSICAL_BUTTONS.map((button) => {
-            const details = assignmentDetails(state, state.assignments[button.number]);
-            return `<tr><td><span class="badge ${details.category}">${button.number}</span></td><td>${escapeHtml(button.label)}</td><td><code>${escapeHtml(logicalButtonId(button, state.handedness))}</code></td><td><strong>${escapeHtml(details.label)}</strong><code>${escapeHtml(details.buttonAction)}</code></td><td>${escapeHtml(details.description)}</td></tr>`;
-          }).join('')}
-        </tbody></table>
-      </section>
-      <section class="panel"><h2>Camera-selection mappings</h2><div class="camera-cards">
-        ${state.cameras.map((camera) => {
-          const buttons = PHYSICAL_BUTTONS.filter((button) => state.assignments[button.number] === cameraAssignment(camera.id)).map((button) => button.number);
-          return `<article class="camera-card"><h3>${escapeHtml(camera.Name || 'Unnamed camera')}${camera.id === state.defaultCameraId ? ' · Default' : ''}</h3><div>${buttonBadges(buttons, 'camera')}</div><dl>
-            <div><dt>ButtonAction</dt><dd>${escapeHtml(cameraActions.get(camera.id) ?? '')}</dd></div>
-            <div><dt>ConnectorId</dt><dd>${escapeHtml(camera.ConnectorId)}</dd></div>
-            <div><dt>ControlId</dt><dd>${escapeHtml(camera.ControlId)}</dd></div>
-          </dl></article>`;
-        }).join('')}
-      </div></section>
-      <section class="panel"><h2>Camera motion</h2><p>Stick pitch controls tilt, stick twist controls pan, and mini-stick pitch controls zoom. Hold a configured Precision mode button to divide PAN/TILT and ZOOM speed by ${state.slowModeDivisor}. Configured ramp speeds: PAN/TILT ${state.panTiltRampSpeed}; ZOOM ${state.zoomRampSpeed}.</p></section>
-    </div>
-  </div>
-  <p class="footnote">Generated for ${escapeHtml(projectName)} · ${escapeHtml(roomName)}. This file is self-contained and may be retained with the room documentation.</p>
-</main>
-</body>
-</html>`;
-
-  return { fileName: manualFileName(state), html };
-}
-
-/**
- * Renders the installer's existing browser print sheet from the same configured
- * documentation model as the downloaded manual.
- */
+/** Retains the installer's browser print view without participating in PDF generation. */
 export function renderConfiguredPrintSheet(state: ConfiguratorState): string {
-  const cameraActions = cameraButtonActions(state.cameras);
-  const targetActions = [
-    ['ControlMain', 'Control Main'],
-    ['ControlPreview', 'Control Preview'],
-    ['SwapMainPreview', 'Swap Main/Preview'],
-    ['PrecisionMode', 'Precision mode'],
-  ] as const;
+  const model = createOperatorGuideModel(state);
   return `
     <section class="print-sheet print-only">
       <header class="print-header">
-        <div><span>Project</span><h1 data-project-name-output>${escapeHtml(state.projectName || 'Joystick Camera Control')}</h1></div>
-        <div class="print-room"><span>Room</span><strong data-room-name-output>${escapeHtml(state.roomName || 'Room')}</strong><small>${state.handedness === 'right' ? 'Right' : 'Left'}-handed switch · ${state.previewMode === 'On' ? `Preview output ${state.previewOutput}` : 'Preview display off'}</small></div>
+        <div><span>Project</span><h1 data-project-name-output>${escapeHtml(model.projectName)}</h1></div>
+        <div class="print-room"><span>Room</span><strong data-room-name-output>${escapeHtml(model.roomName)}</strong><small>${escapeHtml(model.handedness)} · Preview ${escapeHtml(model.previewStatus)}</small></div>
       </header>
       <div class="print-layout">
         <aside>
           <div class="print-section-title"><span>01</span><h2>Joystick map</h2></div>
-          ${renderDiagram(state, './assets/thrustmaster-t16000m.png', false, true)}
-          <div class="legend">
-            ${[
-              ['main', 'Main'], ['preview', 'Preview'], ['camera', 'Camera'],
-              ['motion', 'Motion / swap'], ['selfview', 'Selfview'], ['unused', 'No action'],
-            ].map(([category, label]) => `<span><i class="${category}"></i>${label}</span>`).join('')}
-          </div>
-          <div class="print-quick-use"><h3>Quick operation</h3><p>${printQuickOperation(state)}</p><div class="print-action-chips">
-            ${targetActions.map(([id, label]) => {
-              const details = assignmentDetails(state, builtInAssignment(id));
-              return `<span><strong>${escapeHtml(label)}</strong>${buttonChips(assignedButtonNumbers(state, id), details.category)}</span>`;
-            }).join('')}
-          </div></div>
+          <img src="./assets/thrustmaster-t16000m.png" alt="Thrustmaster T.16000M button and axis reference">
+          <p>${escapeHtml(model.motion.pan)} to pan · ${escapeHtml(model.motion.tilt)} to tilt · ${escapeHtml(model.motion.zoom)} to zoom.</p>
         </aside>
         <div class="print-reference">
           <div class="print-section-title"><span>02</span><h2>Button reference</h2></div>
-          <table class="print-button-table"><thead><tr><th>#</th><th>Physical control</th><th>Action</th><th>Operator result</th></tr></thead><tbody>
-            ${PHYSICAL_BUTTONS.map((button) => {
-              const details = assignmentDetails(state, state.assignments[button.number]);
-              return `<tr><td><span class="chip ${details.category}">${button.number}</span></td><td><strong>${escapeHtml(button.label)}</strong><code>${escapeHtml(logicalButtonId(button, state.handedness))}</code></td><td><strong>${escapeHtml(details.label)}</strong><code>${escapeHtml(details.buttonAction)}</code></td><td>${escapeHtml(details.description)}</td></tr>`;
-            }).join('')}
+          <table class="print-button-table"><thead><tr><th>#</th><th>Physical control</th><th>Operator action</th></tr></thead><tbody>
+            ${model.buttons.map((button) => `<tr><td><span class="chip ${button.category}">${button.number}</span></td><td><strong>${escapeHtml(button.physicalControl)}</strong></td><td>${escapeHtml(button.action)}</td></tr>`).join('')}
           </tbody></table>
-          <div class="print-camera-reference"><div class="print-section-title"><span>03</span><h2>Camera reference</h2></div>
-            <table><thead><tr><th>Camera</th><th>Button</th><th>ButtonAction</th><th>Video</th><th>Control</th></tr></thead><tbody>
-              ${state.cameras.map((camera) => {
-                const button = PHYSICAL_BUTTONS.find((candidate) => state.assignments[candidate.number] === cameraAssignment(camera.id));
-                return `<tr><td><strong>${escapeHtml(camera.Name)}</strong></td><td>${button ? `<span class="chip camera">${button.number}</span>` : '-'}</td><td><code>${escapeHtml(cameraActions.get(camera.id) ?? '')}</code></td><td>${escapeHtml(camera.ConnectorId)}</td><td>${escapeHtml(camera.ControlId)}</td></tr>`;
-              }).join('')}
-            </tbody></table>
-          </div>
         </div>
       </div>
-      <footer class="print-footer"><span>Joystick Camera Control · Cisco Sample Code</span><span>USB or uncertified cameras may be switched but require additional development for joystick PTZ.</span></footer>
+      <footer class="print-footer"><span>${escapeHtml(model.enablement.trackingWarning)}</span></footer>
     </section>`;
 }

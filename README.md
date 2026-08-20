@@ -5,7 +5,7 @@ A standalone RoomOS solution that uses a Thrustmaster T.16000M joystick to stage
 The solution includes:
 
 - `Joystick_CameraControl_ProductionSwitcher.js` — the macro and its self-installed `Joystick Controls` UI panel.
-- `installer/` — the browser configurator, device installer, and downloadable user manual.
+- `installer/` — the browser configurator, device installer, and downloadable single-page PDF operator guide.
 - `Guides/thrustmaster16000m-camera-guide.html` — the original extracted control reference.
 - `CONTEXT.md` — canonical operator terminology.
 
@@ -18,7 +18,7 @@ The browser configurator is the recommended path. Its four-page workflow can be 
 1. Review the requirements, then choose Fresh Installation, Start from Macro, or Fetch Macro from Device.
 2. Set the macro behavior and configure up to four camera sources. A readable camera `ButtonAction`, such as `SelectCamera1`, is generated from each name.
 3. Assign every physical button in a left-to-right control, selection, and result layout. Open the built-in and configured-camera action definitions in a modal when needed. Default assignments are marked and can be restored individually or as a complete set.
-4. Review the Config object, then download the macro, install or update it directly, or download the user manual.
+4. Review the Config object, then download the macro, install or update it directly, or download the configured PDF operator guide.
 
 To resume earlier work, upload a previously generated macro or fetch the installed macro after connecting and verifying the exact device. Every connection starts in a secure modal without leaving the current workflow page. The configurator reads only the marked configuration object and never executes imported macro code.
 
@@ -35,6 +35,12 @@ The installer:
 Fetching an installed configuration uses `Macros Macro Get` on the already verified connection. It is read-only and does not restart the macro runtime.
 
 Refreshing warns before discarding workflow progress and returns to Introduction. The browser caches the device address and administrator username only; passwords and expected serial numbers are not cached. The observed device serial is used only for comparison and is not displayed or logged.
+
+### Operator guide PDF
+
+The Review page generates a real, configuration-specific PDF for printing and keeping in the room. It is exactly one US Letter landscape page and includes the current project and room identity, handedness, Preview status, all 16 physical button assignments, configured camera names, motion settings, the joystick diagram, and the RoomOS enablement steps. Preview-Off guides clearly mark Preview and Swap actions unavailable and use a reduced workflow that does not instruct the operator to use them.
+
+The PDF is generated locally in the browser with embedded source assets. It has no remote image, font, print-dialog, or server-generation dependency.
 
 ### Hardware prerequisites
 
@@ -93,7 +99,7 @@ The editable `config` block is near the top of the macro and is bounded by `JOYS
 | PAN/TILT Ramp Speed | `config.joystick.Camera.PanTiltRampSpeed` | The base speed for camera pan and tilt movement. Not all Cisco cameras respect this setting. |
 | ZOOM Ramp Speed | `config.joystick.Camera.ZoomRampSpeed` | The base speed for camera zoom movement. Not all Cisco cameras respect this setting. |
 | Precision divisor | `config.joystick.Camera.SlowModeDivisor` | Divides the PAN/TILT and ZOOM speeds by this value while the Precision mode button is held. |
-| Camera name | `config.cameras[].Name` | A readable name used in the macro, installer, status display, and generated user manual. |
+| Camera name | `config.cameras[].Name` | A readable name used in the macro, installer, status display, and generated PDF operator guide. |
 | Video ConnectorId | `config.cameras[].ConnectorId` | The RoomOS video input connector used to put this camera on Main or Preview. |
 | Camera ControlId | `config.cameras[].ControlId` | The RoomOS camera identifier that receives this camera's PAN/TILT and ZOOM commands. |
 | Default camera | `config.joystick.DefaultCameraAction` | The camera used for the macro's default Main, Preview, and joystick-control assignments. `SetDefaultCamera` determines whether enabling Joystick Controls applies it to Main. |

@@ -29,7 +29,8 @@ import {
   type CameraDefinition,
   type ConfiguratorState,
 } from './model';
-import { generateConfiguredUserManual, renderConfiguredPrintSheet } from './manual';
+import { downloadBinary } from './download';
+import { generateConfiguredOperatorGuide, renderConfiguredPrintSheet } from './manual';
 import { loadDependencySource, loadInstallerSources, type InstallerSources } from './source';
 import {
   WORKFLOW_STEPS,
@@ -92,7 +93,7 @@ const CONFIGURATION_DEFINITIONS = {
   },
   cameraName: {
     label: 'Camera name',
-    description: 'A readable name used in the macro, installer, status display, and generated user manual.',
+    description: 'A readable name used in the macro, installer, status display, and generated PDF operator guide.',
   },
   videoConnectorId: {
     label: 'Video ConnectorId',
@@ -394,8 +395,8 @@ export class ConfiguratorApp {
         </article>
         <article class="review-action">
           <span class="review-action-number">3</span>
-          <div><h2>Download User Manual</h2><p>Save the illustrated operator guide for setup, training, and room handoff.</p></div>
-          <button class="button secondary" id="download-user-manual" type="button">Download User Manual</button>
+          <div><h2>Download Operator Guide</h2><p>Save the configured, single-page PDF for operators and room handoff.</p></div>
+          <button class="button secondary" id="download-operator-guide" type="button">Download Operator Guide (PDF)</button>
         </article>
       </section>`;
   }
@@ -692,7 +693,7 @@ export class ConfiguratorApp {
                 <div><dt>Macro file</dt><dd><code>${escapeHtml(macroFileName)}</code></dd></div>
                 <div><dt>Camera sources</dt><dd>One to four configured sources</dd></div>
                 <div><dt>Production layout</dt><dd>Main with optional Preview</dd></div>
-                <div><dt>Included tools</dt><dd>Configurator, direct installer, and user manual</dd></div>
+                <div><dt>Included tools</dt><dd>Configurator, direct installer, and PDF operator guide</dd></div>
                 <div><dt>Project license</dt><dd>Cisco Sample Code License 1.1</dd></div>
               </dl>
             </section>
@@ -1052,7 +1053,7 @@ export class ConfiguratorApp {
       this.render();
     });
     this.byId('download-macro')?.addEventListener('click', () => this.downloadConfiguredMacro());
-    this.byId('download-user-manual')?.addEventListener('click', () => this.downloadUserManual());
+    this.byId('download-operator-guide')?.addEventListener('click', () => void this.downloadOperatorGuide());
     this.root.querySelectorAll<HTMLButtonElement>('[data-open-device-connection]').forEach((button) => {
       button.addEventListener('click', () => this.openDeviceConnection(false));
     });
@@ -1213,9 +1214,14 @@ export class ConfiguratorApp {
     }
   }
 
-  private downloadUserManual(): void {
-    const manual = generateConfiguredUserManual(this.state);
-    downloadText(manual.fileName, manual.html, 'text/html;charset=utf-8');
+  private async downloadOperatorGuide(): Promise<void> {
+    try {
+      const guide = await generateConfiguredOperatorGuide(this.state);
+      downloadBinary(guide.fileName, guide.bytes, guide.mimeType);
+    } catch (error) {
+      this.errorMessage = error instanceof Error ? error.message : String(error);
+      this.render();
+    }
   }
 
   private openDeviceConnection(fetchMacro: boolean): void {
