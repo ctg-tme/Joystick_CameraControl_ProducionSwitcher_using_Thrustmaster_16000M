@@ -434,7 +434,7 @@ describe('joystick runtime behavior', () => {
       {
         command: 'Icon.Download',
         parameters: {
-          Url: 'https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/icons/joystick-camera-control-512.png',
+          Url: 'https://ctg-tme.github.io/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M/icons/joystick-camera-control-512.png',
         },
       },
       {

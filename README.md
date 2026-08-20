@@ -8,7 +8,7 @@ Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a sim
 
 ## Start with the Web Installer
 
-### [Open the hosted Web Installer →](https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/)
+### [Open the hosted Web Installer →](https://ctg-tme.github.io/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M/)
 
 The guided Web Installer is the fastest way to configure one to four cameras, assign every T.16000M button, install or update both required RoomOS macros, and download a room-specific PDF operator guide. You can start fresh, upload an existing macro, or fetch the installed configuration from a verified device.
 
@@ -229,7 +229,7 @@ See [Web Installer configuration and installation](docs/web-tool-installation.md
 
 ## Fork and expand the project
 
-This project is intended to be a practical starting point, not a closed appliance. [Fork the repository](https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/fork) and adapt it to the production needs of your rooms.
+This project is intended to be a practical starting point, not a closed appliance. [Fork the repository](https://github.com/ctg-tme/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M/fork) and adapt it to the production needs of your rooms.
 
 Possible extensions include:
 

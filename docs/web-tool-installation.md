@@ -4,7 +4,7 @@ The Web Installer is the guided workflow for configuring the joystick solution, 
 
 Open the hosted tool at:
 
-[Joystick Camera Control Production Switcher Web Installer](https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/)
+[Joystick Camera Control Production Switcher Web Installer](https://ctg-tme.github.io/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M/)
 
 ## When to use the Web Installer
 

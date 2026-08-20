@@ -16,8 +16,8 @@ import {
 const CONFIG_START = '/* JOYSTICK_CONFIG_START */';
 const CONFIG_END = '/* JOYSTICK_CONFIG_END */';
 
-export const PROJECT_INSTALLER_URL = 'https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/';
-export const PROJECT_REPOSITORY_URL = 'https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M';
+export const PROJECT_INSTALLER_URL = 'https://ctg-tme.github.io/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M/';
+export const PROJECT_REPOSITORY_URL = 'https://github.com/ctg-tme/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M';
 
 export interface GeneratedCamera {
   ButtonAction: string;

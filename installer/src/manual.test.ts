@@ -69,7 +69,7 @@ describe('configured operator guide model', () => {
     expect(model.enablement.trackingWarning).toContain('disables tracking modes');
     expect(model.enablement.trackingWarning).toContain('does not automatically restore them');
     expect(model.motion.slider).toBe('Slider will not work.');
-    expect(model.repositoryUrl).toBe('https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M');
+    expect(model.repositoryUrl).toBe('https://github.com/ctg-tme/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M');
     expect(JSON.stringify(model)).not.toMatch(/ConnectorId|ControlId|Logical ButtonId|ButtonAction/);
     expect(JSON.stringify(model)).not.toMatch(/Quad|RVPTZ|Desk Cam/);
   });

@@ -45,8 +45,8 @@ const config = {
   documentation: {
     ProjectName: 'Joystick Camera Control',
     RoomName: 'Room 1',
-    InstallerUrl: 'https://ctg-tme.github.io/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M/',
-    RepositoryUrl: 'https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M'
+    InstallerUrl: 'https://ctg-tme.github.io/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M/',
+    RepositoryUrl: 'https://github.com/ctg-tme/Joystick_CameraControl_ProductionSwitcher_using_Thrustmaster_16000M'
   },
   previewDisplay: {
     mode: 'On',
