@@ -391,7 +391,6 @@ export class ConfiguratorApp {
 
   private renderWorkflowActions(): string {
     const currentStep = this.workflow.currentStep;
-    if (currentStep === 1) return '';
     const previous = currentStep > 1 ? (currentStep - 1) as WorkflowStep : undefined;
     const next = currentStep < WORKFLOW_STEPS.length ? (currentStep + 1) as WorkflowStep : undefined;
     return `

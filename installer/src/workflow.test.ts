@@ -66,7 +66,8 @@ describe('configurator workflow presentation', () => {
     expect(source).toContain('<strong>Fetch Macro from Device</strong>');
     expect(source).toContain("this.openDeviceConnection(true);");
     expect(source).not.toContain('About this project');
-    expect(source).toContain("if (currentStep === 1) return '';");
+    expect(source).not.toContain("if (currentStep === 1) return '';");
+    expect(source).toContain('Continue to ${WORKFLOW_STEPS[next - 1].title}');
   });
 
   it('keeps the preflight context concise and links detailed requirements to the README', async () => {
