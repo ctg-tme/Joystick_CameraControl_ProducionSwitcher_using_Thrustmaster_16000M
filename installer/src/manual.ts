@@ -236,6 +236,44 @@ function drawJoystickColumn(
     );
   }
 
+  const sliderX = imageX + imageWidth * 0.408;
+  const sliderY = imageY + imageHeight * 0.19;
+  const sliderCrossSize = 10;
+  for (const thickness of [5, 2.4]) {
+    const color = thickness === 5 ? COLORS.white : COLORS.warning;
+    page.drawLine({
+      start: { x: sliderX - sliderCrossSize, y: sliderY - sliderCrossSize },
+      end: { x: sliderX + sliderCrossSize, y: sliderY + sliderCrossSize },
+      thickness,
+      color,
+    });
+    page.drawLine({
+      start: { x: sliderX - sliderCrossSize, y: sliderY + sliderCrossSize },
+      end: { x: sliderX + sliderCrossSize, y: sliderY - sliderCrossSize },
+      thickness,
+      color,
+    });
+  }
+  page.drawRectangle({
+    x: imageX + 123,
+    y: imageY + 18,
+    width: 91,
+    height: 18,
+    color: COLORS.white,
+    borderColor: COLORS.warning,
+    borderWidth: 1,
+  });
+  drawFittedText(
+    page,
+    model.motion.slider.toUpperCase(),
+    imageX + 129,
+    imageY + 24,
+    79,
+    fonts.bold,
+    6.1,
+    COLORS.warning,
+  );
+
   const axisItems = [
     ['PAN', model.motion.pan],
     ['TILT', model.motion.tilt],

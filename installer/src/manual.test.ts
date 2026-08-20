@@ -68,6 +68,7 @@ describe('configured operator guide model', () => {
     ]);
     expect(model.enablement.trackingWarning).toContain('disables tracking modes');
     expect(model.enablement.trackingWarning).toContain('does not automatically restore them');
+    expect(model.motion.slider).toBe('Slider will not work.');
     expect(JSON.stringify(model)).not.toMatch(/ConnectorId|ControlId|Logical ButtonId|ButtonAction/);
     expect(JSON.stringify(model)).not.toMatch(/Quad|RVPTZ|Desk Cam/);
   });

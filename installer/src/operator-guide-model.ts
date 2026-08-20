@@ -43,6 +43,7 @@ export interface OperatorGuideModel {
     pan: string;
     tilt: string;
     zoom: string;
+    slider: string;
     panTiltRampSpeed: number;
     zoomRampSpeed: number;
     precisionDivisor: number;
@@ -154,6 +155,7 @@ export function createOperatorGuideModel(state: ConfiguratorState): OperatorGuid
       pan: 'Twist stick',
       tilt: 'Move stick forward / back',
       zoom: 'Move mini-stick forward / back',
+      slider: 'Slider will not work.',
       panTiltRampSpeed: state.panTiltRampSpeed,
       zoomRampSpeed: state.zoomRampSpeed,
       precisionDivisor: state.slowModeDivisor,
