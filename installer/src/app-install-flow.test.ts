@@ -87,6 +87,33 @@ describe('direct installation connection flow', () => {
     });
   });
 
+  it('shows the latest published Release as the About macro version', () => {
+    const app = new ConfiguratorApp(testRoot(), undefined, testWorkflow());
+    const testableApp = app as unknown as {
+      catalog: ReleaseCatalog;
+      sources: InstallerSources;
+      releaseResolution: MacroReleaseResolution;
+      renderAboutModal(): string;
+    };
+    testableApp.catalog = catalog;
+    testableApp.sources = {
+      ...installerSources,
+      release: { ...installerSources.release, tag: 'v1.5.0' },
+    };
+    testableApp.releaseResolution = {
+      origin: 'upload',
+      recognition: 'older',
+      detectedTag: 'v1.5.0',
+      targetTag: 'v1.5.0',
+      targetChosenExplicitly: false,
+    };
+
+    const html = testableApp.renderAboutModal();
+
+    expect(html).toContain('<dt>Macro version</dt><dd><code>v2.0.0</code><small>Latest published Release</small></dd>');
+    expect(html).toContain('<dt>Selected source</dt><dd><code>v1.5.0</code></dd>');
+  });
+
   it('keeps an imported macro on Introduction so its source Release status is visible', async () => {
     const workflow = testWorkflow(1);
     const session: DeviceInstallationSession = {

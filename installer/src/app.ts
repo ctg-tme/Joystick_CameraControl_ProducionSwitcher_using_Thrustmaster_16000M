@@ -928,7 +928,7 @@ export class ConfiguratorApp {
   }
 
   private renderAboutModal(): string {
-    const macroVersion = this.sources?.release.tag ?? this.releaseResolution?.targetTag ?? 'Not selected';
+    const macroVersion = this.catalog?.latest ?? 'Unavailable';
     const macroFileName = this.sources?.release.macro.fileName ?? 'Not selected';
     const selectedSource = this.sources?.kind === 'local-development'
       ? 'Local Development'
@@ -952,7 +952,7 @@ export class ConfiguratorApp {
             <section aria-labelledby="about-details-title">
               <h3 id="about-details-title">Project details</h3>
               <dl class="about-details">
-                <div><dt>Macro version</dt><dd><code>${escapeHtml(macroVersion)}</code></dd></div>
+                <div><dt>Macro version</dt><dd><code>${escapeHtml(macroVersion)}</code><small>Latest published Release</small></dd></div>
                 <div><dt>Macro file</dt><dd><code>${escapeHtml(macroFileName)}</code></dd></div>
                 <div><dt>Selected source</dt><dd><code>${escapeHtml(selectedSource)}</code></dd></div>
                 <div><dt>Dependency Release</dt><dd><code>${escapeHtml(dependencyRelease)}</code></dd></div>

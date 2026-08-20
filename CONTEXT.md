@@ -84,6 +84,9 @@ _Avoid_: Device socket, socket connection
 **Macro Version**:
 The semantic version in the repository macro's aligned `Version:` header. Every change to the macro file must also change the Macro Version; backward-compatible new behavior increments the minor version, fixes increment the patch version, and breaking changes increment the major version.
 
+**Latest Release**:
+The most recent compatible published Production Switcher Release. The About section's Macro Version references this Release rather than the currently selected or local development source.
+
 **RoomOS validation target**: `codec-pro-g2`
 
 Use the exact `codec-pro-g2` alias through the shared RoomOS Socket Workbench

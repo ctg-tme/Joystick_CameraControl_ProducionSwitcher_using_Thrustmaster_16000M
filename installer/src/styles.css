@@ -2393,6 +2393,15 @@ td code {
   font-weight: 650;
 }
 
+.about-details dd small {
+  display: block;
+  margin-top: 2px;
+  color: var(--base-text-medium-default);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
 .about-details code {
   max-width: 100%;
   overflow-wrap: anywhere;

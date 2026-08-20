@@ -301,8 +301,9 @@ describe('configurator workflow presentation', () => {
       source.indexOf('private renderOutput()'),
     );
 
-    expect(aboutSource).toContain("const macroVersion = this.sources?.release.tag ?? this.releaseResolution?.targetTag ?? 'Not selected';");
+    expect(aboutSource).toContain("const macroVersion = this.catalog?.latest ?? 'Unavailable';");
     expect(aboutSource).toContain('<dt>Macro version</dt>');
+    expect(aboutSource).toContain('<small>Latest published Release</small>');
     expect(aboutSource).toContain('<dt>Macro file</dt>');
     expect(aboutSource).toContain('<dt>Selected source</dt>');
     expect(aboutSource).toContain('<dt>Dependency Release</dt>');
