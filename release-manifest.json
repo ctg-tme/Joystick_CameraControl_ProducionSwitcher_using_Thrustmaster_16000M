@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "macro": "Joystick_CameraControl_ProductionSwitcher.js",
+  "dependencies": [
+    {
+      "repo": "ctg-tme/Thrustmaster_16000M-InputDevice-Class",
+      "release": "v1.0.0",
+      "asset": "Thrustmaster_16000M-Class.js"
+    }
+  ]
+}
