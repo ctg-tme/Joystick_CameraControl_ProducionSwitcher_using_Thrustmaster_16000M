@@ -321,6 +321,58 @@ describe('direct installation connection flow', () => {
     expect(testableApp.state.assignments[12]).toBe(originalAssignment);
   });
 
+  it('renders each discovered camera as a single action row with details in an info tooltip', () => {
+    const session: DeviceInstallationSession = {
+      snapshot: () => ({
+        connected: true,
+        host: 'room.example.test',
+        verifiedDevice: {
+          productPlatform: 'Codec Pro G2',
+          roomOsVersion: 'RoomOS 26',
+          serialMatches: true,
+          activeCalls: 0,
+        },
+      }),
+      connect: vi.fn(),
+      fetchInstalledMacro: vi.fn(),
+      discoverCameraSources: vi.fn(async () => []),
+      recheck: vi.fn(),
+      install: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const app = new ConfiguratorApp(testRoot(), session, testWorkflow(2));
+    const testableApp = app as unknown as {
+      discoveredCameras: Array<{
+        ConnectorId: string;
+        Name: string;
+        ControlId: string | null;
+        connection: 'connected';
+        cameraControlMode: string;
+        model: string;
+      }>;
+      renderDiscoveredCameras(): string;
+    };
+    testableApp.discoveredCameras = [{
+      ConnectorId: '8',
+      Name: 'Ethernet 1',
+      ControlId: '9',
+      connection: 'connected',
+      cameraControlMode: 'Off',
+      model: 'Room Vision PTZ',
+    }];
+
+    const html = testableApp.renderDiscoveredCameras();
+
+    expect(html).toContain('<strong class="discovered-camera-name" title="Ethernet 1">Ethernet 1</strong>');
+    expect(html).toContain('data-use-discovered-camera="8"');
+    expect(html).toContain('class="field-info discovered-camera-info"');
+    expect(html).toContain('Connected · ConnectorId: 8 · ControlId: 9 · Model: Room Vision PTZ');
+    expect(html).toContain('Warnings: Device camera control is disabled');
+    expect(html).not.toContain('<dl>');
+    expect(html).not.toContain('camera-connection');
+    expect(html).not.toContain('camera-discovery-warnings');
+  });
+
   it('migrates a fetched unknown source without writing to the device or leaving update mode', async () => {
     const install = vi.fn();
     const fetchInstalledMacro = vi.fn();

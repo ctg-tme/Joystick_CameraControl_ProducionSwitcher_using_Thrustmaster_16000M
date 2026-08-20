@@ -365,6 +365,9 @@ describe('configurator workflow presentation', () => {
     expect(appSource).toContain("label: 'ZOOM Ramp Speed'");
     expect(appSource).toContain('class="field-info-trigger"');
     expect(appSource).toContain('role="tooltip"');
+    expect(appSource).not.toContain('field-optional');
+    expect(appSource).not.toContain('(optional)');
+    expect(styles).not.toContain('.field-optional');
     expect(styles).toContain('.field-info:focus-within .field-tooltip');
     expect(styles).toContain('background: var(--inverse-bg-weak-default);');
     expect(readme).toContain('### Configuration reference');
@@ -386,10 +389,18 @@ describe('configurator workflow presentation', () => {
     expect(source).toContain("type PendingDeviceAction = 'install' | 'fetch-macro' | 'discover-cameras'");
     expect(source).toContain("if (actionAfterConnect === 'discover-cameras') await this.discoverCameras(true);");
     expect(source).toContain('Four-camera limit reached');
+    expect(source).toContain('class="discovered-camera-name"');
+    expect(source).toContain('class="field-info discovered-camera-info"');
+    expect(source).toContain('class="field-tooltip discovered-camera-tooltip"');
+    expect(source).toContain('`ConnectorId: ${source.ConnectorId}`');
+    expect(source).toContain("`ControlId: ${source.ControlId === null ? 'Disabled' : source.ControlId}`");
+    expect(source).toContain("`Model: ${source.model ?? 'Model unavailable'}`");
     expect(source).toContain("const nextDisabled = currentStep === 2 && validateConfiguratorState(this.state).length > 0;");
     expect(styles).toContain('.camera-source-layout');
     expect(styles).toContain('.discovered-cameras-pane');
     expect(styles).toContain('.discovered-camera-card');
+    expect(styles).toMatch(/\.discovered-camera-card \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto 20px;/s);
+    expect(styles).toMatch(/\.discovered-camera-name \{[^}]*white-space: nowrap;/s);
     expect(styles).toMatch(/\.configured-cameras-pane \.camera-grid \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);
     expect(styles).toMatch(/\.camera-fields \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);
     expect(styles).toMatch(/\.camera-fields \.wide \{[^}]*grid-column: 1 \/ -1;/s);

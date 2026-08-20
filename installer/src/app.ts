@@ -65,12 +65,10 @@ const LOCAL_DEVELOPMENT_TARGET = 'local-development';
 const CONFIGURATION_DEFINITIONS = {
   projectName: {
     label: 'Project name',
-    optional: true,
     description: 'The project name used for documentation within the macro. It does not affect operation.',
   },
   roomName: {
     label: 'Room name',
-    optional: true,
     description: 'The room where the macro will be installed. It is used only for documentation and can help distinguish rooms with different configurations.',
   },
   handedness: {
@@ -115,7 +113,6 @@ const CONFIGURATION_DEFINITIONS = {
   },
   cameraControlId: {
     label: 'Camera ControlId',
-    optional: true,
     description: 'The RoomOS camera identifier that receives PAN/TILT and ZOOM commands. Choose Disabled for USB or third-party video-only sources.',
   },
   defaultCamera: {
@@ -742,7 +739,7 @@ export class ConfiguratorApp {
         ${connected && this.cameraDiscoveryLoading ? '<div class="callout progress" role="status"><strong>Discovering cameras</strong><p>Reading video input configuration and camera status.</p></div>' : ''}
         ${connected && this.cameraDiscoveryError ? `<div class="callout error" role="alert"><strong>Camera discovery failed</strong><p>${escapeHtml(this.cameraDiscoveryError)}</p></div>` : ''}
         ${connected && discoveredForConnection && !this.cameraDiscoveryLoading && !this.cameraDiscoveryError && this.discoveredCameras.length === 0 ? '<div class="camera-discovery-empty"><p>No camera-type video input connectors were reported by this device.</p></div>' : ''}
-        ${connected && this.discoveredCameras.length ? `<div class="discovered-camera-list" aria-live="polite">${this.discoveredCameras.map((source) => {
+        ${connected && this.discoveredCameras.length ? `<div class="discovered-camera-list" aria-live="polite">${this.discoveredCameras.map((source, index) => {
           const configured = this.state.cameras.find((camera) => camera.ConnectorId.trim() === source.ConnectorId);
           const name = source.Name.trim() || configured?.Name.trim() || `Camera ${source.ConnectorId}`;
           const upToDate = Boolean(
@@ -752,23 +749,34 @@ export class ConfiguratorApp {
           );
           const atLimit = !configured && this.state.cameras.length >= 4;
           const action = upToDate ? 'Added' : configured ? 'Update Camera' : 'Add Camera';
+          const connectionStatus = source.connection === 'connected'
+            ? 'Connected'
+            : source.connection === 'disconnected'
+              ? 'Disconnected'
+              : 'Status unavailable';
           const warnings = [
             source.connection === 'disconnected' ? 'Camera is disconnected' : '',
             source.connection === 'unavailable' ? 'Camera status unavailable' : '',
             source.cameraControlMode?.toLowerCase() === 'off' ? 'Device camera control is disabled' : '',
           ].filter(Boolean);
+          const details = [
+            connectionStatus,
+            `ConnectorId: ${source.ConnectorId}`,
+            `ControlId: ${source.ControlId === null ? 'Disabled' : source.ControlId}`,
+            `Model: ${source.model ?? 'Model unavailable'}`,
+            warnings.length ? `Warnings: ${warnings.join('; ')}` : '',
+          ].filter(Boolean).join(' · ');
+          const tooltipId = `discovered-camera-help-${index + 1}`;
           return `
             <article class="discovered-camera-card">
-              <div class="discovered-camera-card-heading"><strong>${escapeHtml(name)}</strong><span class="camera-connection ${source.connection}">${source.connection === 'connected' ? 'Connected' : source.connection === 'disconnected' ? 'Disconnected' : 'Status unavailable'}</span></div>
-              <dl>
-                <div><dt>ConnectorId</dt><dd>${escapeHtml(source.ConnectorId)}</dd></div>
-                <div><dt>ControlId</dt><dd>${source.ControlId === null ? 'Disabled' : escapeHtml(source.ControlId)}</dd></div>
-                <div><dt>Model</dt><dd>${escapeHtml(source.model ?? 'Model unavailable')}</dd></div>
-              </dl>
-              <div class="discovered-camera-actions">
-                ${warnings.length ? `<ul class="camera-discovery-warnings">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>` : '<span></span>'}
-                <button class="button ${configured ? 'secondary' : 'primary'}" type="button" data-use-discovered-camera="${escapeHtml(source.ConnectorId)}" ${upToDate || atLimit || this.cameraDiscoveryLoading ? 'disabled' : ''}>${atLimit ? 'Four-camera limit reached' : action}</button>
-              </div>
+              <strong class="discovered-camera-name" title="${escapeHtml(name)}">${escapeHtml(name)}</strong>
+              <button class="button ${configured ? 'secondary' : 'primary'}" type="button" data-use-discovered-camera="${escapeHtml(source.ConnectorId)}" ${upToDate || atLimit || this.cameraDiscoveryLoading ? 'disabled' : ''}>${atLimit ? 'Four-camera limit reached' : action}</button>
+              <span class="field-info discovered-camera-info">
+                <button class="field-info-trigger" type="button" aria-label="Information about ${escapeHtml(name)}" aria-describedby="${tooltipId}">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="9"></circle><path d="M12 10.75v6M12 7.25h.01"></path></svg>
+                </button>
+                <span class="field-tooltip discovered-camera-tooltip" id="${tooltipId}" role="tooltip">${escapeHtml(details)}</span>
+              </span>
             </article>`;
         }).join('')}</div>` : ''}
       </aside>`;
@@ -778,11 +786,8 @@ export class ConfiguratorApp {
     const definition = CONFIGURATION_DEFINITIONS[key];
     const instanceSuffix = instance ? `-${instance.replace(/[^a-zA-Z0-9_-]/g, '-')}` : '';
     const tooltipId = `configuration-help-${key}${instanceSuffix}`;
-    const optional = 'optional' in definition && definition.optional
-      ? '<span class="field-optional">(optional)</span>'
-      : '';
 
-    return `<span class="field-label"><span>${escapeHtml(definition.label)}</span>${optional}<span class="field-info">
+    return `<span class="field-label"><span>${escapeHtml(definition.label)}</span><span class="field-info">
       <button class="field-info-trigger" type="button" aria-label="Information about ${escapeHtml(definition.label)}" aria-describedby="${tooltipId}">
         <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="9"></circle><path d="M12 10.75v6M12 7.25h.01"></path></svg>
       </button>
