@@ -1,5 +1,9 @@
 # Joystick Camera Control Production Switcher
 
+![An operator controlling a camera with the Thrustmaster T.16000M at InfoComm 2026](docs/images/infocomm-2026-joystick-demo.png)
+
+_The joystick camera-control experience demonstrated at InfoComm 2026._
+
 Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a simple Main/Preview production workflow without a separate control computer. This solution is purpose-built for the **Thrustmaster T.16000M** and its specific buttons, axes, and left/right-handed hardware modes; it is not a generic USB-joystick integration.
 
 ## Start with the Web Installer
@@ -9,10 +13,6 @@ Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a sim
 The guided Web Installer is the fastest way to configure one to four cameras, assign every T.16000M button, install or update both required RoomOS macros, and download a room-specific PDF operator guide. You can start fresh, upload an existing macro, or fetch the installed configuration from a verified device.
 
 For device checks, security behavior, and deployment details, see [Web Installer configuration and installation](docs/web-tool-installation.md). A complete [manual configuration](#configure-the-solution-macro-manually) and [manual installation](#install-the-macros-manually) path is also available below.
-
-![An operator controlling a camera with the Thrustmaster T.16000M at InfoComm 2026](docs/images/infocomm-2026-joystick-demo.png)
-
-_The joystick camera-control experience demonstrated at InfoComm 2026._
 
 ## What this solution offers
 
