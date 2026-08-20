@@ -42,6 +42,25 @@ Choose one starting point:
 - **Start from Macro** — upload a previously generated solution macro and recover its marked configuration.
 - **Fetch Macro from Device** — connect to the exact RoomOS device and read the installed configuration.
 
+Choose the **Base macro release** beside the heading. A fresh page always starts
+with the latest compatible published stable Release; the choice is kept only in
+the current workflow session. The selected base Release's manifest supplies its
+exact dependency, so there is no separate dependency selector.
+
+Uploads and device fetches both detect the macro's aligned `Version:` header:
+
+- Current sources select the latest Release and are ready to review.
+- Older packaged sources select their matching verified Release pair and offer
+  **Migrate to latest release** while remaining usable before migration.
+- Unknown or unavailable sources retain every valid recovered setting and can
+  still generate the operator guide. Macro download and direct installation are
+  disabled until a supported Release is selected explicitly or migration is
+  confirmed.
+
+Migration preserves the complete configuration, switches only the verified base
+template and dependency pair, and makes no device write or macro-runtime restart.
+An installed source remains in update mode after migration.
+
 Refreshing the browser warns before discarding workflow progress and returns to Introduction.
 
 ### 2. Macro Settings
@@ -87,7 +106,7 @@ The browser caches only the device address and administrator username. It does n
 
 After verification and confirmation, the Web Installer:
 
-1. retrieves the current `Thrustmaster_16000M-Class.js` source from its separate repository;
+1. loads the selected base Release's verified, packaged `Thrustmaster_16000M-Class.js` dependency;
 2. saves that dependency with the exact macro name `Thrustmaster_16000M-Class` and leaves it inactive;
 3. saves and activates the configured `Joystick_CameraControl_ProductionSwitcher` macro;
 4. restarts the RoomOS macro runtime once, restarting every active macro on the device;
@@ -137,3 +156,15 @@ See the [installer development README](../installer/README.md) for asset prepara
 Enable GitHub Pages with **GitHub Actions** as the source. [`.github/workflows/deploy-installer.yml`](../.github/workflows/deploy-installer.yml) tests and builds the installer when `main` changes, then publishes `installer/dist`.
 
 The generated `installer/public/assets` and `installer/dist` directories are not committed.
+
+Each Production Switcher Release must include the repository-root
+`release-manifest.json`. Its intentionally small contract contains only manifest
+`version`, base macro asset name, and dependency `repo`, exact `release`, and
+`asset` name. GitHub metadata supplies publication state, dates, URLs, and
+SHA-256 digests during the static build.
+
+Before publishing every base Release, update the existing aligned `Version:`
+header in `Joystick_CameraControl_ProductionSwitcher.js`. After publishing or
+updating Release assets, manually rerun the Pages workflow so it rebuilds the
+verified same-origin Release catalog. Released PDF guides are not packaged; the
+browser continues generating the room-specific guide.

@@ -69,8 +69,7 @@ describe('device installation', () => {
 
     const result = await session.install(
       {
-        dependencyName: 'Thrustmaster_16000M-Class',
-        dependencySource: 'dependency source',
+        dependencies: [{ name: 'Thrustmaster_16000M-Class', source: 'dependency source' }],
         macroName: 'Joystick_CameraControl_ProductionSwitcher',
         macroSource: 'configured macro source',
       },
@@ -109,8 +108,7 @@ describe('device installation', () => {
     await session.connect(credentials, 'SERIAL-1');
 
     await expect(session.install({
-      dependencyName: 'dependency',
-      dependencySource: 'source',
+      dependencies: [{ name: 'dependency', source: 'source' }],
       macroName: 'macro',
       macroSource: 'source',
     }, vi.fn())).rejects.toThrow('A call started after the confirmation prompt. Installation remains blocked.');

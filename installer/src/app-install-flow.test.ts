@@ -6,36 +6,47 @@ import type {
   DeviceInstallationState,
   InstallSources,
 } from './device';
-import type { InstallerSources } from './source';
+import { createDefaultState, type ConfiguratorState } from './model';
+import type { InstallerSources, MacroReleaseResolution, ReleaseCatalog } from './source';
 import type { WorkflowNavigation } from './workflow';
 
-vi.mock('./source', async () => {
-  const source = await vi.importActual<typeof import('./source')>('./source');
-  return {
-    ...source,
-    loadDependencySource: vi.fn(async () => 'dependency source'),
-  };
-});
-
-const installerSources: InstallerSources = {
-  manifest: {
-    version: 'test',
+const digest = 'a'.repeat(64);
+const catalog: ReleaseCatalog = {
+  version: 1,
+  repositoryVersion: 'v2.0.0',
+  latest: 'v2.0.0',
+  releases: [{
+    tag: 'v2.0.0',
+    publishedAt: '2026-08-19T12:00:00Z',
+    releaseUrl: 'https://example.test/v2.0.0',
     macro: {
       fileName: 'Joystick_CameraControl_ProductionSwitcher.js',
       macroName: 'Joystick_CameraControl_ProductionSwitcher',
-      sha256: 'test',
+      sha256: digest,
+      path: 'releases/v2.0.0/Joystick_CameraControl_ProductionSwitcher.js',
     },
-    dependency: {
+    dependencies: [{
+      repo: 'ctg-tme/Thrustmaster_16000M-InputDevice-Class',
+      release: 'v1.0.0',
       fileName: 'Thrustmaster_16000M-Class.js',
       macroName: 'Thrustmaster_16000M-Class',
-      sourceUrl: 'https://example.test/Thrustmaster_16000M-Class.js',
-    },
-  },
+      sha256: digest,
+      path: 'releases/v2.0.0/dependencies/input/v1.0.0/Thrustmaster_16000M-Class.js',
+    }],
+  }],
+};
+
+const installerSources: InstallerSources = {
+  release: catalog.releases[0],
   macroTemplate: [
     '/* JOYSTICK_CONFIG_START */',
     'const config = {};',
     '/* JOYSTICK_CONFIG_END */',
   ].join('\n'),
+  dependencies: [{
+    manifest: catalog.releases[0].dependencies[0],
+    source: 'dependency source',
+  }],
 };
 
 function testRoot(): HTMLElement {
@@ -99,12 +110,21 @@ describe('direct installation connection flow', () => {
     const app = new ConfiguratorApp(testRoot(), session, testWorkflow());
     const testableApp = app as unknown as {
       sources: InstallerSources;
+      catalog: ReleaseCatalog;
+      releaseResolution: MacroReleaseResolution;
       credentials: DeviceCredentials;
       expectedSerial: string;
       openDeviceConnection(fetchMacro: boolean): void;
       connectDevice(): Promise<void>;
     };
     testableApp.sources = installerSources;
+    testableApp.catalog = catalog;
+    testableApp.releaseResolution = {
+      origin: 'fresh',
+      recognition: 'fresh',
+      targetTag: 'v2.0.0',
+      targetChosenExplicitly: false,
+    };
     testableApp.credentials = {
       host: 'room.example.test',
       username: 'admin',
@@ -116,5 +136,53 @@ describe('direct installation connection flow', () => {
     await testableApp.connectDevice();
 
     expect(install).toHaveBeenCalledOnce();
+  });
+
+  it('migrates a fetched unknown source without writing to the device or leaving update mode', async () => {
+    const install = vi.fn();
+    const fetchInstalledMacro = vi.fn();
+    const session: DeviceInstallationSession = {
+      snapshot: () => ({ connected: false }),
+      connect: vi.fn(),
+      fetchInstalledMacro,
+      recheck: vi.fn(),
+      install,
+      disconnect: vi.fn(),
+    };
+    const app = new ConfiguratorApp(testRoot(), session, testWorkflow());
+    const testableApp = app as unknown as {
+      state: ConfiguratorState;
+      sources?: InstallerSources;
+      catalog: ReleaseCatalog;
+      releaseResolution: MacroReleaseResolution;
+      releaseSourceCache: Map<string, InstallerSources>;
+      installationMode: 'install' | 'update';
+      migrateToLatest(): Promise<void>;
+    };
+    testableApp.catalog = catalog;
+    testableApp.releaseResolution = {
+      origin: 'device',
+      recognition: 'unknown',
+      targetChosenExplicitly: false,
+    };
+    testableApp.installationMode = 'update';
+    testableApp.state = createDefaultState();
+    testableApp.state.projectName = 'Preserve every field';
+    testableApp.state.panTiltRampSpeed = 21;
+    testableApp.releaseSourceCache.set('v2.0.0', installerSources);
+    const before = structuredClone(testableApp.state);
+
+    await testableApp.migrateToLatest();
+
+    expect(testableApp.state).toEqual(before);
+    expect(testableApp.installationMode).toBe('update');
+    expect(testableApp.sources).toBe(installerSources);
+    expect(testableApp.releaseResolution).toMatchObject({
+      origin: 'device',
+      targetTag: 'v2.0.0',
+      targetChosenExplicitly: true,
+    });
+    expect(fetchInstalledMacro).not.toHaveBeenCalled();
+    expect(install).not.toHaveBeenCalled();
   });
 });

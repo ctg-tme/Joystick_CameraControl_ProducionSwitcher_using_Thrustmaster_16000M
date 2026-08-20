@@ -8,7 +8,10 @@ This Vite application has three jobs:
 
 The interface is organized as Introduction, Macro Settings, Button Assignments,
 and Review and Installation. Introduction offers a fresh configuration, local
-macro import, or a verified device fetch. Macro Settings includes camera sources,
+macro import, or a verified device fetch. It also selects the base macro Release;
+the latest compatible published stable Release is selected on every fresh page
+load, and that Release's manifest determines the exact dependency Release. The
+selection lasts only for the current in-memory workflow. Macro Settings includes camera sources,
 independent PAN/TILT and zoom ramp speeds, and their shared Precision Mode divisor.
 The Button Assignments page reads left to right while its complete action key
 opens in a modal. The workflow rail and browser history allow any visited page to
@@ -38,13 +41,68 @@ npm run fixtures:operator-guide
 `../tmp/pdfs/operator-guide-fixtures` and updates the representative PDF under
 `../output/pdf`. Use Poppler `pdfinfo` and `pdftoppm` to verify and render them.
 
-`prepare:assets` runs automatically before development, tests, and builds. It:
+`prepare:assets` runs automatically before development and builds. Unit tests use
+mocked GitHub metadata and asset responses instead of live network calls. Asset preparation:
 
-- validates the macro configuration markers and JavaScript syntax;
-- copies the current macro into ignored `public/assets`;
+- queries published stable Production Switcher Releases through the GitHub API;
+- validates each simple `release-manifest.json`, Release asset SHA-256 digest,
+  macro configuration markers, and JavaScript syntax;
+- resolves each dependency from its exact repository, Release tag, and asset name;
+- packages verified base/dependency pairs under ignored, versioned
+  `public/assets/releases` paths and writes `release-catalog.json`;
+- reuses a packaged download only while its digest still matches the GitHub digest;
 - copies the joystick diagram into ignored `public/assets`;
 - reuses the README's InfoComm live-demo image in ignored `public/assets`;
-- records the macro hash and external dependency URL in `source-manifest.json`.
+
+Asset preparation fails instead of falling back to checkout bytes, a branch URL,
+an unverified download, or an external CORS proxy. A production build also
+requires the repository-root macro's `Version:` header to match the latest
+compatible published Release, while packaging the verified Release asset rather
+than the checkout copy. The browser continues generating its configuration-
+specific PDF guide; released PDF assets are not downloaded or packaged.
+
+## Release manifest and publication
+
+Each Production Switcher Release includes a deliberately small
+`release-manifest.json`:
+
+```json
+{
+  "version": 1,
+  "macro": "Joystick_CameraControl_ProductionSwitcher.js",
+  "dependencies": [
+    {
+      "repo": "ctg-tme/Thrustmaster_16000M-InputDevice-Class",
+      "release": "v1.0.0",
+      "asset": "Thrustmaster_16000M-Class.js"
+    }
+  ]
+}
+```
+
+Before every Production Switcher Release, update the aligned `Version:` line in
+the repository-root macro. Publish the base macro and manifest as Release assets,
+ensure each dependency Release contains its named asset, and then manually rerun
+the GitHub Pages workflow. Rerun that workflow whenever an existing Release asset
+is updated so the verified static catalog is rebuilt.
+
+## Imported and fetched macro versions
+
+Local uploads and read-only device fetches use the same safe ingestion path. The
+installer detects the aligned macro `Version:` header independently from parsing
+the marked configuration object; imported code is never executed.
+
+- A current source selects the latest Release and needs no migration.
+- An older packaged source selects its older verified base/dependency pair and
+  remains fully usable until the operator chooses **Migrate to latest release**.
+- An unknown or unavailable source still loads every recoverable configuration
+  value and can generate the PDF operator guide. Macro download and direct device
+  installation remain disabled until the operator explicitly selects a supported
+  Release or migrates to latest.
+
+Migration preserves the complete configuration and device update mode, changes
+only the target base/dependency pair, revalidates locally, and performs no device
+write or macro-runtime restart.
 
 The operator guide is generated on demand with `pdf-lib`; it is not a browser
 printout or an HTML file renamed as PDF. The bundled joystick diagram and the
@@ -80,7 +138,9 @@ The install sequence is:
 5. restart the macro runtime once;
 6. monitor macro logs for ready, failure, or timeout.
 
-The dependency source is fetched only when the operator starts installation. It is not copied into this repository.
+The dependency source comes from the selected Release's verified, same-origin
+build artifact. It is loaded before device changes begin and saved inactive using
+the existing installation sequence.
 
 ## GitHub Pages
 

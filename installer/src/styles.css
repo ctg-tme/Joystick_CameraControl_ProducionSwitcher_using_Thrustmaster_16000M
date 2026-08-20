@@ -41,6 +41,7 @@
   --base-text-in-default: #23282e;
   --base-text-medium-default: #d0d4d9;
   --base-text-strong-default: #f0f1f2;
+  --base-text-weak-disabled: #6f7680;
   --brand-accent-border-active: #52a62b;
   --brand-accent-border-default: #52a62b;
   --brand-accent-border-medium-default: #596069;
@@ -50,14 +51,17 @@
   --brand-bg-hover: #373c42;
   --brand-text-default: #f7f7f7;
   --control-bg-default: #23282e;
+  --control-bg-disabled: #373c42;
   --control-bg-focus: #2a3442;
   --control-bg-hover: #2a3442;
   --control-bg-strong-default: #649ef5;
   --control-bg-weak-default: #23282e;
+  --control-bg-weak-hover: #373c42;
   --control-border-default: #7e868f;
   --control-border-focus: #7cadf7;
   --control-border-hover: #7cadf7;
   --control-border-weak-default: #656c75;
+  --control-border-weak-disabled: #596069;
   --interact-bg-active: #7cadf7;
   --interact-bg-default: #649ef5;
   --interact-bg-disabled: #446392;
@@ -518,6 +522,13 @@ code {
   border-top: 1px solid var(--brand-accent-border-medium-default);
 }
 
+.installer-introduction-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
 .installer-introduction h2 {
   margin-top: 6px;
   color: var(--inverse-text-default);
@@ -532,6 +543,52 @@ code {
   color: var(--inverse-text-medium-default);
   font-size: 14px;
   line-height: 20px;
+}
+
+.release-picker {
+  display: grid;
+  flex: 0 1 290px;
+  gap: 5px;
+  color: var(--inverse-text-default);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.release-picker select {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 34px 6px 10px;
+  border: 2px solid var(--control-border-default);
+  border-radius: 6px;
+  background: var(--control-bg-weak-default);
+  color: var(--base-text-default);
+  cursor: pointer;
+}
+
+.release-picker select:hover:not(:disabled) {
+  border-color: var(--control-border-hover);
+  background: var(--control-bg-hover);
+}
+
+.release-picker select:focus-visible {
+  border-color: var(--control-border-focus);
+  box-shadow:
+    0 0 0 2px var(--control-bg-weak-hover),
+    0 0 0 4px var(--control-border-focus);
+}
+
+.release-picker select:disabled {
+  border-color: var(--control-border-weak-disabled);
+  background: var(--control-bg-disabled);
+  color: var(--base-text-weak-disabled);
+  cursor: not-allowed;
+}
+
+.release-picker small {
+  color: var(--inverse-text-medium-default);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
 }
 
 .installation-paths {
@@ -568,6 +625,18 @@ code {
 
 .introduction-callout {
   color: var(--base-text-default);
+}
+
+.release-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  color: var(--base-text-default);
+}
+
+.release-status .button {
+  flex: 0 0 auto;
 }
 
 .hero-actions,
@@ -764,6 +833,28 @@ code {
   margin-top: 10px;
   color: var(--muted);
   font-size: 16px;
+}
+
+.page-intro .selected-release-summary {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 16px;
+  padding: 8px 11px;
+  border-left: 3px solid var(--positive-border-default);
+  border-radius: 0 6px 6px 0;
+  background: var(--positive-bg-medium-default);
+  color: var(--base-text-default);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.page-intro .selected-release-summary.warning {
+  border-left-color: var(--warning-border-default);
+  background: var(--warning-bg-medium-default);
+}
+
+.selected-release-summary span {
+  color: var(--base-text-medium-default);
 }
 
 .button-assignment-page,
@@ -2434,6 +2525,21 @@ td code {
 
   .solution-highlights {
     grid-template-columns: 1fr;
+  }
+
+  .installer-introduction-heading,
+  .release-status {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .release-picker {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .release-status .button {
+    width: 100%;
   }
 
   .installation-paths article {

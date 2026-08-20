@@ -234,6 +234,37 @@ describe('configurator workflow presentation', () => {
     expect(manualSource).toContain('enablementImageDataUrl');
   });
 
+  it('renders an accessible responsive Release selector and keeps the guide available for unknown sources', async () => {
+    const [appSource, styles] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('./styles.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(appSource).toContain('<label class="release-picker" for="base-macro-release">');
+    expect(appSource).toContain('id="base-macro-release" aria-describedby="base-macro-release-help"');
+    expect(appSource).toContain('Imported macro · Release unknown');
+    expect(appSource).toContain('Migrate to latest release (${escapeHtml(catalog.latest)})');
+    expect(appSource).toContain('const hasSupportedTarget = this.hasSupportedTarget();');
+    expect(appSource).toContain('hasSupportedTarget && configurationIsValid');
+    expect(appSource).toContain('id="download-operator-guide" type="button">');
+    expect(styles).toMatch(/\.installer-introduction-heading \{[\s\S]*?justify-content: space-between;/);
+    expect(styles).toMatch(/@media \(max-width: 720px\)[\s\S]*?\.installer-introduction-heading,[\s\S]*?flex-direction: column;/);
+    expect(styles).toContain('border-color: var(--control-border-focus);');
+  });
+
+  it('uses only packaged dependency sources in the existing installation sequence', async () => {
+    const [appSource, preparationSource] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../scripts/prepare-assets.mjs', import.meta.url), 'utf8'),
+    ]);
+
+    expect(appSource).toContain('dependencies: this.sources.dependencies.map((dependency) => ({');
+    expect(appSource).toContain('source: dependency.source,');
+    expect(preparationSource).not.toContain('raw.githubusercontent.com');
+    expect(preparationSource).not.toContain('/main/');
+    expect(appSource).not.toContain('sourceUrl');
+  });
+
   it('keeps About focused on current project details', async () => {
     const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
     const aboutSource = source.slice(
@@ -241,9 +272,11 @@ describe('configurator workflow presentation', () => {
       source.indexOf('private renderOutput()'),
     );
 
-    expect(aboutSource).toContain("const macroVersion = this.sources?.manifest.version ?? 'Loading…';");
+    expect(aboutSource).toContain("const macroVersion = this.releaseResolution?.targetTag ?? 'Not selected';");
     expect(aboutSource).toContain('<dt>Macro version</dt>');
     expect(aboutSource).toContain('<dt>Macro file</dt>');
+    expect(aboutSource).toContain('<dt>Selected base Release</dt>');
+    expect(aboutSource).toContain('<dt>Dependency Release</dt>');
     expect(aboutSource).toContain('<dt>Camera sources</dt>');
     expect(aboutSource).toContain('<p class="about-product-model">${JOYSTICK_MODEL}</p>');
     expect(aboutSource).toContain('Project repository');

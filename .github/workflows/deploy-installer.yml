@@ -8,6 +8,7 @@ on:
       - '.github/workflows/deploy-installer.yml'
       - 'installer/**'
       - 'Joystick_CameraControl_ProductionSwitcher.js'
+      - 'release-manifest.json'
       - 'Guides/thrustmaster16000m-camera-guide.html'
       - 'README.md'
   workflow_dispatch:
@@ -45,6 +46,8 @@ jobs:
 
       - name: Build installer
         working-directory: installer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: npm run build
 
       - name: Configure GitHub Pages

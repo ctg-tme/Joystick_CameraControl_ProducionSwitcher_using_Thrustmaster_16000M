@@ -1,7 +1,6 @@
 import {
   generateConfigSource,
   generateConfiguredMacro,
-  parseConfiguratorStateFromMacro,
   PROJECT_REPOSITORY_URL,
   validateConfiguratorState,
 } from './config';
@@ -31,7 +30,19 @@ import {
 } from './model';
 import { downloadBinary } from './download';
 import { generateConfiguredOperatorGuide, renderConfiguredPrintSheet } from './manual';
-import { loadDependencySource, loadInstallerSources, type InstallerSources } from './source';
+import {
+  chooseReleaseTarget,
+  createFreshReleaseResolution,
+  ingestMacroSource,
+  latestCatalogRelease,
+  loadInstallerRelease,
+  loadReleaseCatalog,
+  migrateToLatestRelease,
+  type InstallerSources,
+  type MacroReleaseResolution,
+  type MacroSourceOrigin,
+  type ReleaseCatalog,
+} from './source';
 import {
   WORKFLOW_STEPS,
   createWorkflowNavigation,
@@ -173,6 +184,9 @@ export class ConfiguratorApp {
   private state: ConfiguratorState = createDefaultState();
   private themePreference: ThemePreference = storedThemePreference();
   private readonly systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+  private catalog?: ReleaseCatalog;
+  private releaseResolution?: MacroReleaseResolution;
+  private readonly releaseSourceCache = new Map<string, InstallerSources>();
   private sources?: InstallerSources;
   private sourceError = '';
   private credentials: DeviceCredentials = storedDeviceCredentials();
@@ -210,7 +224,9 @@ export class ConfiguratorApp {
     });
     this.render();
     try {
-      this.sources = await loadInstallerSources();
+      this.catalog = await loadReleaseCatalog();
+      this.releaseResolution = createFreshReleaseResolution(this.catalog);
+      this.sources = await this.loadReleaseSources(this.catalog.latest);
     } catch (error) {
       this.sourceError = error instanceof Error ? error.message : String(error);
     }
@@ -234,6 +250,22 @@ export class ConfiguratorApp {
       // The selected theme still applies for this session.
     }
     this.applyTheme();
+  }
+
+  private async loadReleaseSources(tag: string): Promise<InstallerSources> {
+    if (!this.catalog) throw new Error('The installer Release catalog is not available.');
+    const cached = this.releaseSourceCache.get(tag);
+    if (cached) return cached;
+    const sources = await loadInstallerRelease(this.catalog, tag);
+    this.releaseSourceCache.set(sources.release.tag, sources);
+    return sources;
+  }
+
+  private hasSupportedTarget(): boolean {
+    return Boolean(
+      this.releaseResolution?.targetTag &&
+      this.sources?.release.tag === this.releaseResolution.targetTag,
+    );
   }
 
   private navigateToStep(step: WorkflowStep, pushHistory = true): void {
@@ -374,6 +406,7 @@ export class ConfiguratorApp {
 
   private renderReviewActions(): string {
     const configurationIsValid = validateConfiguratorState(this.state).length === 0;
+    const hasSupportedTarget = this.hasSupportedTarget();
     const session = this.deviceSession.snapshot();
     const isUpdate = this.installationMode === 'update';
     const deviceAction = isUpdate ? 'Update Macro' : 'Install Macro';
@@ -385,12 +418,12 @@ export class ConfiguratorApp {
         <article class="review-action primary-action">
           <span class="review-action-number">1</span>
           <div><h2>Download Macro</h2><p>Save the configured JavaScript macro for a manual RoomOS upload.</p></div>
-          <button class="button primary" id="download-macro" type="button" ${this.sources && configurationIsValid ? '' : 'disabled'}>Download Macro</button>
+          <button class="button primary" id="download-macro" type="button" ${hasSupportedTarget && configurationIsValid ? '' : 'disabled'}>Download Macro</button>
         </article>
         <article class="review-action">
           <span class="review-action-number">2</span>
           <div><h2>${deviceAction}</h2><p>${deviceDescription}</p></div>
-          <button class="button secondary" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${configurationIsValid ? '' : 'disabled'}>${deviceAction}</button>
+          <button class="button secondary" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${hasSupportedTarget && configurationIsValid ? '' : 'disabled'}>${deviceAction}</button>
         </article>
         <article class="review-action">
           <span class="review-action-number">3</span>
@@ -410,10 +443,87 @@ export class ConfiguratorApp {
           <span class="section-kicker">04 · Review</span>
           <h1>Review and installation</h1>
           <p>Confirm the generated configuration, then choose how you want to deliver the solution.</p>
+          ${this.renderSelectedReleaseSummary()}
         </header>
         ${this.renderReviewActions()}
         ${this.renderOutput()}
         ${this.renderInstaller()}
+      </div>`;
+  }
+
+  private renderReleaseSelector(): string {
+    if (!this.catalog) {
+      return `
+        <label class="release-picker" for="base-macro-release">
+          <span>Base macro release</span>
+          <select id="base-macro-release" disabled><option>${this.sourceError ? 'Unavailable' : 'Loading…'}</option></select>
+        </label>`;
+    }
+    const selectedTag = this.releaseResolution?.targetTag;
+    const unresolvedLabel = this.releaseResolution?.recognition === 'unavailable'
+      ? `Imported macro · ${this.releaseResolution.detectedTag} unavailable`
+      : 'Imported macro · Release unknown';
+    return `
+      <label class="release-picker" for="base-macro-release">
+        <span>Base macro release</span>
+        <select id="base-macro-release" aria-describedby="base-macro-release-help" ${this.busy ? 'disabled' : ''}>
+          ${selectedTag ? '' : `<option value="" selected disabled>${escapeHtml(unresolvedLabel)}</option>`}
+          ${this.catalog.releases.map((release) => `
+            <option value="${escapeHtml(release.tag)}" ${release.tag === selectedTag ? 'selected' : ''}>${escapeHtml(release.tag)}${release.tag === this.catalog?.latest ? ' · Latest' : ''}</option>`).join('')}
+        </select>
+        <small id="base-macro-release-help">The selected base Release determines its exact dependency Release.</small>
+      </label>`;
+  }
+
+  private renderSelectedReleaseSummary(): string {
+    const release = this.sources?.release;
+    if (!release || !this.hasSupportedTarget()) {
+      return '<p class="selected-release-summary warning">Target Release: choose a supported Release before downloading or installing macros.</p>';
+    }
+    const dependencies = release.dependencies
+      .map((dependency) => `${dependency.fileName} ${dependency.release}`)
+      .join(', ');
+    return `<p class="selected-release-summary"><strong>Target Release:</strong> ${escapeHtml(release.tag)} <span>· ${escapeHtml(dependencies)}</span></p>`;
+  }
+
+  private renderSourceReleaseStatus(): string {
+    const resolution = this.releaseResolution;
+    const catalog = this.catalog;
+    if (!resolution || !catalog || resolution.origin === 'fresh') return '';
+    const detected = resolution.detectedTag ?? 'Unknown';
+    const target = resolution.targetTag;
+    let sentiment = 'success';
+    let heading = 'Source release is current';
+    let message = `${detected} matches the latest supported Release.`;
+
+    if (resolution.recognition === 'older') {
+      sentiment = 'warning';
+      heading = 'Source release is older';
+      message = target
+        ? `${detected} is loaded with its verified dependency pair. ${catalog.latest} is available.`
+        : `${detected} was detected, but no supported target is selected.`;
+    } else if (resolution.recognition === 'unknown') {
+      sentiment = target ? 'success' : 'warning';
+      heading = target ? 'Supported migration target selected' : 'Source release is unknown';
+      message = target
+        ? `The source version could not be identified. Its recovered configuration now targets ${target}.`
+        : `The configuration was recovered, but downloading and installation require an explicit supported target.`;
+    } else if (resolution.recognition === 'unavailable') {
+      sentiment = target ? 'success' : 'warning';
+      heading = target ? 'Supported migration target selected' : 'Source release is unavailable';
+      message = target
+        ? `${detected} is not packaged. Its recovered configuration now targets ${target}.`
+        : `${detected} is not packaged. The configuration remains editable, but downloading and installation require an explicit supported target.`;
+    } else if (resolution.targetChosenExplicitly && target) {
+      heading = 'Release target changed';
+      message = `The recovered configuration now targets ${target}; no device changes were made.`;
+    }
+
+    const offerLatest = !target || target !== catalog.latest;
+    return `
+      <div class="callout ${sentiment} release-status" role="status">
+        <div><strong>${escapeHtml(heading)}</strong><p>${escapeHtml(message)}</p></div>
+        ${offerLatest ? `<button class="button secondary" id="migrate-latest-release" type="button" ${this.busy ? 'disabled' : ''}>Migrate to latest release (${escapeHtml(catalog.latest)})</button>` : ''}
       </div>`;
   }
 
@@ -422,7 +532,7 @@ export class ConfiguratorApp {
     return `
       <header class="hero">
         <div class="hero-copy">
-          <span class="eyebrow">RoomOS joystick camera control</span>
+          <span class="eyebrow">Cisco RoomOS macro solution</span>
           <h1>Joystick Camera Control Production Switcher</h1>
           <p class="hero-summary">Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a simple Main/Preview production workflow without a separate control computer.</p>
           <ul class="solution-highlights" aria-label="Solution highlights">
@@ -432,25 +542,28 @@ export class ConfiguratorApp {
           </ul>
           <p class="hero-read-more"><a id="project-readme-link" href="${PROJECT_README_URL}" target="_blank" rel="noreferrer">Read the project README <span aria-hidden="true">↗</span></a> for the complete feature set, requirements, operator workflow, and manual setup.</p>
           <section class="installer-introduction no-print" aria-labelledby="choose-start-title">
-            <span class="eyebrow">Start with the Web Installer</span>
-            <h2 id="choose-start-title">Choose how to begin</h2>
+            <div class="installer-introduction-heading">
+              <div><span class="eyebrow">Start with the Web Installer</span><h2 id="choose-start-title">Choose how to begin</h2></div>
+              ${this.renderReleaseSelector()}
+            </div>
             <p>Configure every button, install or update both RoomOS macros, and download a room-specific PDF operator guide.</p>
             <div class="installation-paths no-print" aria-label="Choose how to begin">
               <article>
                 <div><strong>Fresh Installation</strong><p>Start with the documented defaults, then configure the room and cameras.</p></div>
-                <button class="button primary" id="fresh-installation" type="button">Fresh Installation</button>
+                <button class="button primary" id="fresh-installation" type="button" ${this.catalog && !this.busy ? '' : 'disabled'}>Fresh Installation</button>
               </article>
               <article>
                 <div><strong>Start from Macro</strong><p>Load settings from a macro file without executing its source.</p></div>
                 <label class="button secondary file-button">Start from Macro
-                  <input id="import-macro-file" type="file" accept=".js,.txt,text/javascript">
+                  <input id="import-macro-file" type="file" accept=".js,.txt,text/javascript" ${this.catalog && !this.busy ? '' : 'disabled'}>
                 </label>
               </article>
               <article>
                 <div><strong>Fetch Macro from Device</strong><p>${connected ? 'Read the installed macro from the verified device.' : 'Connect to a device, verify it, and read its installed macro.'}</p></div>
-                <button class="button secondary" id="begin-device-macro-fetch" type="button" ${this.sources && !this.busy ? '' : 'disabled'}>Fetch Macro from Device</button>
+                <button class="button secondary" id="begin-device-macro-fetch" type="button" ${this.catalog && !this.busy ? '' : 'disabled'}>Fetch Macro from Device</button>
               </article>
             </div>
+            ${this.renderSourceReleaseStatus()}
           </section>
           ${this.configurationMessage ? `<div class="callout success introduction-callout"><strong>Configuration loaded</strong><p>${escapeHtml(this.configurationMessage)}</p></div>` : ''}
           ${this.configurationError ? `<div class="callout error introduction-callout"><strong>Configuration not loaded</strong><p>${escapeHtml(this.configurationError)}</p></div>` : ''}
@@ -673,8 +786,11 @@ export class ConfiguratorApp {
   }
 
   private renderAboutModal(): string {
-    const macroVersion = this.sources?.manifest.version ?? 'Loading…';
-    const macroFileName = this.sources?.manifest.macro.fileName ?? 'Loading…';
+    const macroVersion = this.releaseResolution?.targetTag ?? 'Not selected';
+    const macroFileName = this.sources?.release.macro.fileName ?? 'Not selected';
+    const dependencyRelease = this.sources?.release.dependencies
+      .map((dependency) => `${dependency.fileName} ${dependency.release}`)
+      .join(', ') ?? 'Not selected';
     return `
       <dialog class="about-dialog no-print" id="about-dialog" aria-labelledby="about-title" aria-describedby="about-summary">
         <div class="about-shell">
@@ -693,6 +809,8 @@ export class ConfiguratorApp {
               <dl class="about-details">
                 <div><dt>Macro version</dt><dd><code>${escapeHtml(macroVersion)}</code></dd></div>
                 <div><dt>Macro file</dt><dd><code>${escapeHtml(macroFileName)}</code></dd></div>
+                <div><dt>Selected base Release</dt><dd><code>${escapeHtml(macroVersion)}</code></dd></div>
+                <div><dt>Dependency Release</dt><dd><code>${escapeHtml(dependencyRelease)}</code></dd></div>
                 <div><dt>Camera sources</dt><dd>One to four configured sources</dd></div>
                 <div><dt>Production layout</dt><dd>Main with optional Preview</dd></div>
                 <div><dt>Included tools</dt><dd>Configurator, direct installer, and PDF operator guide</dd></div>
@@ -729,10 +847,11 @@ export class ConfiguratorApp {
     const actionLabel = isUpdate ? 'Update Macro' : 'Install Macro';
     const operation = isUpdate ? 'update' : 'installation';
     const configurationIsValid = validateConfiguratorState(this.state).length === 0;
+    const hasSupportedTarget = this.hasSupportedTarget();
     const canPromptInstall = Boolean(
       session.connected &&
       verifiedDevice?.serialMatches &&
-      this.sources &&
+      hasSupportedTarget &&
       configurationIsValid &&
       !this.busy,
     );
@@ -746,7 +865,7 @@ export class ConfiguratorApp {
           <div class="install-plan-panel">
             <h3>Installation plan</h3>
             <ol class="install-plan">
-              <li><span>1</span><div><strong>${isUpdate ? 'Update' : 'Install'} dependency</strong><code>Thrustmaster_16000M-Class</code><small>Saved inactive from its separate GitHub repository.</small></div></li>
+              <li><span>1</span><div><strong>${isUpdate ? 'Update' : 'Install'} dependency</strong><code>${escapeHtml(this.sources?.release.dependencies.map((dependency) => dependency.macroName).join(', ') ?? 'Select a supported Release')}</code><small>Saved inactive from the exact dependency Release packaged with the selected base Release.</small></div></li>
               <li><span>2</span><div><strong>${isUpdate ? 'Update' : 'Install'} configured macro</strong><code>Joystick_CameraControl_ProductionSwitcher</code><small>Saved and activated with the mapping shown above.</small></div></li>
               <li><span>3</span><div><strong>Restart macro runtime</strong><small>Every active macro on the device restarts. The macro then installs its UI panel.</small></div></li>
             </ol>
@@ -761,7 +880,7 @@ export class ConfiguratorApp {
               </div>` : '<div class="device-result neutral"><strong>Not connected</strong><span>Connect and verify the exact device in the secure modal.</span></div>'}
             <div class="install-buttons">
               ${session.connected ? '<button class="button secondary" id="disconnect-device" type="button">Disconnect</button>' : ''}
-              <button class="button primary install-button" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${session.connected ? (canPromptInstall ? '' : 'disabled') : (configurationIsValid ? '' : 'disabled')}>${actionLabel}</button>
+              <button class="button primary install-button" ${session.connected ? 'data-open-install-confirmation' : 'data-open-device-connection'} type="button" ${session.connected ? (canPromptInstall ? '' : 'disabled') : (hasSupportedTarget && configurationIsValid ? '' : 'disabled')}>${actionLabel}</button>
             </div>
           </div>
         </div>
@@ -946,6 +1065,13 @@ export class ConfiguratorApp {
     this.byId('theme-preference')?.addEventListener('change', (event) => {
       this.setThemePreference((event.currentTarget as HTMLSelectElement).value as ThemePreference);
     });
+    this.byId('base-macro-release')?.addEventListener('change', (event) => {
+      const tag = (event.currentTarget as HTMLSelectElement).value;
+      if (tag) void this.selectReleaseTarget(tag);
+    });
+    this.byId('migrate-latest-release')?.addEventListener('click', () => {
+      void this.migrateToLatest();
+    });
 
     this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => {
       const key = input.dataset.setting as keyof ConfiguratorState;
@@ -1045,7 +1171,7 @@ export class ConfiguratorApp {
 
     this.byId('add-camera')?.addEventListener('click', () => this.addCamera());
     this.byId('restore-default-controls')?.addEventListener('click', () => this.restoreDefaultControls());
-    this.byId('fresh-installation')?.addEventListener('click', () => this.startFreshInstallation());
+    this.byId('fresh-installation')?.addEventListener('click', () => void this.startFreshInstallation());
     this.byId('import-macro-file')?.addEventListener('change', (event) => {
       void this.importMacroFile(event.currentTarget as HTMLInputElement);
     });
@@ -1120,17 +1246,83 @@ export class ConfiguratorApp {
     }
   }
 
-  private loadConfigurationSource(source: string, message: string): void {
-    this.state = parseConfiguratorStateFromMacro(source);
+  private async selectReleaseTarget(tag: string): Promise<void> {
+    if (!this.catalog || !this.releaseResolution || this.busy) return;
+    const previousSources = this.sources;
+    const previousResolution = this.releaseResolution;
+    this.busy = true;
+    this.sourceError = '';
+    this.render();
+    try {
+      const sources = await this.loadReleaseSources(tag);
+      this.sources = sources;
+      this.releaseResolution = chooseReleaseTarget(previousResolution, this.catalog, sources.release.tag);
+      this.configurationError = '';
+      this.configurationMessage = previousResolution.origin === 'fresh'
+        ? `Fresh installations now target ${sources.release.tag}. Your configuration settings were preserved.`
+        : `Migrated the recovered configuration to ${sources.release.tag}. No device changes were made.`;
+    } catch (error) {
+      this.sources = previousSources;
+      this.releaseResolution = previousResolution;
+      this.sourceError = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  private async migrateToLatest(): Promise<void> {
+    if (!this.catalog || !this.releaseResolution || this.busy) return;
+    const latestResolution = migrateToLatestRelease(this.releaseResolution, this.catalog);
+    await this.selectReleaseTarget(latestResolution.targetTag!);
+  }
+
+  private async loadConfigurationSource(
+    source: string,
+    message: string,
+    origin: Exclude<MacroSourceOrigin, 'fresh'>,
+  ): Promise<void> {
+    if (!this.catalog) throw new Error('The installer Release catalog is not available.');
+    const ingested = ingestMacroSource(source, this.catalog, origin);
+    this.state = ingested.state;
+    this.releaseResolution = ingested.release;
+    this.sources = undefined;
+    this.sourceError = '';
+    if (ingested.release.targetTag) {
+      try {
+        this.sources = await this.loadReleaseSources(ingested.release.targetTag);
+      } catch (error) {
+        this.sourceError = error instanceof Error ? error.message : String(error);
+      }
+    }
     this.configurationError = '';
     this.configurationMessage = message;
   }
 
-  private startFreshInstallation(): void {
+  private async startFreshInstallation(): Promise<void> {
+    if (!this.catalog || this.busy) return;
+    const selectedTag = this.releaseResolution?.targetTag ?? latestCatalogRelease(this.catalog).tag;
+    this.busy = true;
+    this.sourceError = '';
+    try {
+      this.sources = await this.loadReleaseSources(selectedTag);
+      this.releaseResolution = {
+        origin: 'fresh',
+        recognition: 'fresh',
+        targetTag: selectedTag,
+        targetChosenExplicitly: selectedTag !== this.catalog.latest,
+      };
+    } catch (error) {
+      this.sourceError = error instanceof Error ? error.message : String(error);
+      this.busy = false;
+      this.render();
+      return;
+    }
     this.state = createDefaultState();
     this.installationMode = 'install';
     this.configurationMessage = '';
     this.configurationError = '';
+    this.busy = false;
     this.navigateToStep(2);
   }
 
@@ -1142,7 +1334,11 @@ export class ConfiguratorApp {
     let loaded = false;
     try {
       if (file.size > 1024 * 1024) throw new Error('Choose a macro smaller than 1 MiB.');
-      this.loadConfigurationSource(await file.text(), `Loaded ${file.name}. Review the recovered settings before downloading or installing.`);
+      await this.loadConfigurationSource(
+        await file.text(),
+        `Loaded ${file.name}. Review the recovered settings before downloading or installing.`,
+        'upload',
+      );
       this.installationMode = 'install';
       loaded = true;
     } catch (error) {
@@ -1163,16 +1359,21 @@ export class ConfiguratorApp {
 
   private async fetchInstalledMacro(navigateAfterLoad = false): Promise<void> {
     const session = this.deviceSession.snapshot();
-    if (!session.connected || !session.verifiedDevice?.serialMatches || !this.sources) return;
+    if (!session.connected || !session.verifiedDevice?.serialMatches || !this.catalog) return;
+    const macroName = latestCatalogRelease(this.catalog).macro.macroName;
     this.configurationMessage = '';
     this.configurationError = '';
     this.busy = true;
-    this.statusMessage = `Reading ${this.sources.manifest.macro.macroName} from the verified device.`;
+    this.statusMessage = `Reading ${macroName} from the verified device.`;
     this.render();
     let loaded = false;
     try {
-      const source = await this.deviceSession.fetchInstalledMacro(this.sources.manifest.macro.macroName);
-      this.loadConfigurationSource(source, `Fetched ${this.sources.manifest.macro.macroName} from the verified device. Review the recovered settings before installing changes.`);
+      const source = await this.deviceSession.fetchInstalledMacro(macroName);
+      await this.loadConfigurationSource(
+        source,
+        `Fetched ${macroName} from the verified device. Review the recovered settings before installing changes.`,
+        'device',
+      );
       this.installationMode = 'update';
       this.statusMessage = 'The installed macro configuration was loaded without changing the device.';
       this.pendingDeviceAction = undefined;
@@ -1206,10 +1407,10 @@ export class ConfiguratorApp {
   }
 
   private downloadConfiguredMacro(): void {
-    if (!this.sources) return;
+    if (!this.sources || !this.hasSupportedTarget()) return;
     try {
       const configured = generateConfiguredMacro(this.sources.macroTemplate, this.state);
-      downloadText(this.sources.manifest.macro.fileName, configured);
+      downloadText(this.sources.release.macro.fileName, configured);
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : String(error);
       this.render();
@@ -1319,7 +1520,7 @@ export class ConfiguratorApp {
 
   private async openInstallConfirmation(): Promise<void> {
     const session = this.deviceSession.snapshot();
-    if (!session.connected || !this.sources || !session.verifiedDevice?.serialMatches || this.busy) return;
+    if (!session.connected || !this.sources || !this.hasSupportedTarget() || !session.verifiedDevice?.serialMatches || this.busy) return;
     this.errorMessage = '';
     this.installConfirmationOpen = false;
     this.busy = true;
@@ -1361,7 +1562,7 @@ export class ConfiguratorApp {
 
   private async installDevice(): Promise<void> {
     const session = this.deviceSession.snapshot();
-    if (!session.connected || !this.sources || !session.verifiedDevice?.serialMatches) return;
+    if (!session.connected || !this.sources || !this.hasSupportedTarget() || !session.verifiedDevice?.serialMatches) return;
     if (session.verifiedDevice.activeCalls !== 0) {
       this.errorMessage = 'Installation is blocked while the device has an active call.';
       this.statusMessage = 'Connected and verified, but no device changes were made.';
@@ -1376,17 +1577,16 @@ export class ConfiguratorApp {
     this.recordInstallationProgress('Rechecking the device immediately before making changes.');
     this.render();
     try {
-      this.recordInstallationProgress('Loading the external Thrustmaster class before making device changes.');
+      this.recordInstallationProgress('Loading the verified packaged dependency before making device changes.');
       this.render();
-      const [dependencySource, macroSource] = await Promise.all([
-        loadDependencySource(this.sources.manifest),
-        Promise.resolve(generateConfiguredMacro(this.sources.macroTemplate, this.state)),
-      ]);
+      const macroSource = generateConfiguredMacro(this.sources.macroTemplate, this.state);
       const result = await this.deviceSession.install(
         {
-          dependencyName: this.sources.manifest.dependency.macroName,
-          dependencySource,
-          macroName: this.sources.manifest.macro.macroName,
+          dependencies: this.sources.dependencies.map((dependency) => ({
+            name: dependency.manifest.macroName,
+            source: dependency.source,
+          })),
+          macroName: this.sources.release.macro.macroName,
           macroSource,
         },
         (message) => {

@@ -16,8 +16,10 @@ export interface VerifiedDevice {
 }
 
 export interface InstallSources {
-  dependencyName: string;
-  dependencySource: string;
+  dependencies: Array<{
+    name: string;
+    source: string;
+  }>;
   macroName: string;
   macroSource: string;
 }
@@ -181,7 +183,7 @@ async function installAndVerify(
   });
 
   try {
-    for (const name of [sources.dependencyName, sources.macroName]) {
+    for (const name of [...sources.dependencies.map((dependency) => dependency.name), sources.macroName]) {
       onProgress(`Ensuring ${name} is inactive before saving`);
       try {
         await xapi.command('Macros Macro Deactivate', { Name: name });
@@ -190,12 +192,14 @@ async function installAndVerify(
       }
     }
 
-    onProgress(`Saving dependency ${sources.dependencyName}`);
-    await xapi.command(
-      'Macros Macro Save',
-      { Name: sources.dependencyName, Overwrite: 'True', Transpile: 'True' },
-      sources.dependencySource,
-    );
+    for (const dependency of sources.dependencies) {
+      onProgress(`Saving dependency ${dependency.name}`);
+      await xapi.command(
+        'Macros Macro Save',
+        { Name: dependency.name, Overwrite: 'True', Transpile: 'True' },
+        dependency.source,
+      );
+    }
 
     onProgress(`Saving configured macro ${sources.macroName}`);
     await xapi.command(
