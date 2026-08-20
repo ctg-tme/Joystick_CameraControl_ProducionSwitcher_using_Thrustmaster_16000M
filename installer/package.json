@@ -13,10 +13,12 @@
   },
   "dependencies": {
     "jsxapi": "^6.0.0",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "@types/qrcode": "^1.5.6",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"

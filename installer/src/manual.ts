@@ -1,6 +1,8 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage, type RGB } from 'pdf-lib';
+import { create as createQrCode } from 'qrcode';
 import joystickImageDataUrl from './assets/thrustmaster-t16000m.png?inline';
 import enablementImageDataUrl from './assets/joystick-controls-enabled-crop.jpg?inline';
+import repositoryIconDataUrl from './assets/repository-icon.png?inline';
 import { PHYSICAL_BUTTONS, type ActionCategory, type ConfiguratorState } from './model';
 import {
   createOperatorGuideModel,
@@ -178,6 +180,52 @@ function drawNumberBadge(
   });
 }
 
+function drawRepositoryQrCode(
+  page: PDFPage,
+  repositoryUrl: string,
+  repositoryIcon: PDFImage,
+  x: number,
+  y: number,
+  size: number,
+): void {
+  const qrCode = createQrCode(repositoryUrl, { errorCorrectionLevel: 'H' });
+  const quietZoneModules = 4;
+  const totalModules = qrCode.modules.size + quietZoneModules * 2;
+  const moduleSize = size / totalModules;
+
+  page.drawRectangle({ x, y, width: size, height: size, color: COLORS.white });
+  for (let row = 0; row < qrCode.modules.size; row += 1) {
+    for (let column = 0; column < qrCode.modules.size; column += 1) {
+      if (!qrCode.modules.get(row, column)) continue;
+      page.drawRectangle({
+        x: x + (column + quietZoneModules) * moduleSize,
+        y: y + (qrCode.modules.size - row - 1 + quietZoneModules) * moduleSize,
+        width: moduleSize + 0.02,
+        height: moduleSize + 0.02,
+        color: COLORS.ink,
+      });
+    }
+  }
+
+  const iconBackingSize = size * 0.29;
+  const iconSize = size * 0.245;
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+  page.drawRectangle({
+    x: centerX - iconBackingSize / 2,
+    y: centerY - iconBackingSize / 2,
+    width: iconBackingSize,
+    height: iconBackingSize,
+    color: COLORS.white,
+  });
+  page.drawImage(repositoryIcon, {
+    x: centerX - iconSize / 2,
+    y: centerY - iconSize / 2,
+    width: iconSize,
+    height: iconSize,
+  });
+}
+
 function drawHeader(page: PDFPage, model: OperatorGuideModel, fonts: GuideFonts): void {
   page.drawRectangle({ x: 0, y: 536, width: PAGE_WIDTH, height: 76, color: COLORS.ink });
   page.drawText('OPERATOR GUIDE', {
@@ -327,6 +375,7 @@ function drawEnablementColumn(
   model: OperatorGuideModel,
   fonts: GuideFonts,
   enablementImage: Awaited<ReturnType<PDFDocument['embedJpg']>>,
+  repositoryIcon: PDFImage,
 ): void {
   const x = 260;
   const width = 244;
@@ -400,16 +449,24 @@ function drawEnablementColumn(
     workflowY = after - 4;
   });
 
-  page.drawRectangle({ x, y: 49, width, height: 36, color: COLORS.faint });
+  page.drawRectangle({ x, y: 45, width, height: 61, color: COLORS.faint });
+  page.drawText('SCAN FOR GITHUB REPO', {
+    x: x + 10,
+    y: 91,
+    font: fonts.bold,
+    size: 6.5,
+    color: COLORS.muted,
+  });
   drawWrappedText(page, `${model.handedness} room. ${model.enablement.enableResult}`, {
     x: x + 10,
-    y: 71,
-    width: width - 20,
+    y: 76,
+    width: 166,
     font: fonts.bold,
     size: 7.2,
     lineHeight: 9,
-    maxLines: 2,
+    maxLines: 3,
   });
+  drawRepositoryQrCode(page, model.repositoryUrl, repositoryIcon, x + 187, 48, 54);
 }
 
 function drawButtonRow(
@@ -480,12 +537,13 @@ function renderOperatorGuidePage(
   fonts: GuideFonts,
   joystickImage: Awaited<ReturnType<PDFDocument['embedPng']>>,
   enablementImage: Awaited<ReturnType<PDFDocument['embedJpg']>>,
+  repositoryIcon: PDFImage,
 ): void {
   drawHeader(page, model, fonts);
   page.drawLine({ start: { x: 254, y: 44 }, end: { x: 254, y: 522 }, thickness: 0.6, color: COLORS.line });
   page.drawLine({ start: { x: 510, y: 44 }, end: { x: 510, y: 522 }, thickness: 0.6, color: COLORS.line });
   drawJoystickColumn(page, model, fonts, joystickImage);
-  drawEnablementColumn(page, model, fonts, enablementImage);
+  drawEnablementColumn(page, model, fonts, enablementImage, repositoryIcon);
   drawButtonColumn(page, model, fonts);
   page.drawText('Keep this guide in the room for operators.', {
     x: 516,
@@ -507,14 +565,15 @@ export async function generateConfiguredOperatorGuide(
   document.setCreator('Joystick Camera Control Macro Web Installer');
   document.setProducer('pdf-lib');
 
-  const [regular, bold, joystickImage, enablementImage] = await Promise.all([
+  const [regular, bold, joystickImage, enablementImage, repositoryIcon] = await Promise.all([
     document.embedFont(StandardFonts.Helvetica),
     document.embedFont(StandardFonts.HelveticaBold),
     document.embedPng(bytesFromDataUrl(joystickImageDataUrl)),
     document.embedJpg(bytesFromDataUrl(enablementImageDataUrl)),
+    document.embedPng(bytesFromDataUrl(repositoryIconDataUrl)),
   ]);
   const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  renderOperatorGuidePage(page, model, { regular, bold }, joystickImage, enablementImage);
+  renderOperatorGuidePage(page, model, { regular, bold }, joystickImage, enablementImage, repositoryIcon);
 
   return {
     fileName: operatorGuideFileName(state),

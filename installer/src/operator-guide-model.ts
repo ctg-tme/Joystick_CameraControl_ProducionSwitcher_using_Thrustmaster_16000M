@@ -8,6 +8,7 @@ import {
   type ActionCategory,
   type ConfiguratorState,
 } from './model';
+import { PROJECT_REPOSITORY_URL } from './config';
 
 export interface OperatorGuideButton {
   number: number;
@@ -29,6 +30,7 @@ export interface OperatorGuideModel {
   handedness: 'Right-handed' | 'Left-handed';
   previewStatus: string;
   previewEnabled: boolean;
+  repositoryUrl: string;
   buttons: OperatorGuideButton[];
   cameras: OperatorGuideCamera[];
   enablement: {
@@ -125,6 +127,7 @@ export function createOperatorGuideModel(state: ConfiguratorState): OperatorGuid
       ? `On - output ${state.previewOutput}`
       : 'Off - Preview and Swap unavailable',
     previewEnabled: state.previewMode === 'On',
+    repositoryUrl: PROJECT_REPOSITORY_URL,
     buttons: PHYSICAL_BUTTONS.map((button) => ({
       number: button.number,
       physicalControl: button.label,

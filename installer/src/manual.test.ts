@@ -69,6 +69,7 @@ describe('configured operator guide model', () => {
     expect(model.enablement.trackingWarning).toContain('disables tracking modes');
     expect(model.enablement.trackingWarning).toContain('does not automatically restore them');
     expect(model.motion.slider).toBe('Slider will not work.');
+    expect(model.repositoryUrl).toBe('https://github.com/ctg-tme/Joystick_CameraControl_ProducionSwitcher_using_Thrustmaster_16000M');
     expect(JSON.stringify(model)).not.toMatch(/ConnectorId|ControlId|Logical ButtonId|ButtonAction/);
     expect(JSON.stringify(model)).not.toMatch(/Quad|RVPTZ|Desk Cam/);
   });
@@ -112,7 +113,7 @@ describe('configured operator guide PDF', () => {
     expect(document.getPageCount()).toBe(1);
     expect(page.getWidth()).toBe(792);
     expect(page.getHeight()).toBe(612);
-    expect(source.match(/\/Subtype\s*\/Image/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(source.match(/\/Subtype\s*\/Image/g)?.length).toBeGreaterThanOrEqual(3);
   });
 
   it('preserves the original enablement screenshot and embeds a handedness-neutral crop', async () => {
