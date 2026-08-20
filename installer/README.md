@@ -43,6 +43,7 @@ npm run fixtures:operator-guide
 - validates the macro configuration markers and JavaScript syntax;
 - copies the current macro into ignored `public/assets`;
 - copies the joystick diagram into ignored `public/assets`;
+- reuses the README's InfoComm live-demo image in ignored `public/assets`;
 - records the macro hash and external dependency URL in `source-manifest.json`.
 
 The operator guide is generated on demand with `pdf-lib`; it is not a browser

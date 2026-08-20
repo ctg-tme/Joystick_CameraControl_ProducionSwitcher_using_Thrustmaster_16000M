@@ -41,10 +41,9 @@ import {
 
 const UNUSED_ASSIGNMENT = builtInAssignment('');
 const DEFAULT_CAMERA_BUTTONS = [12, 11, 15, 16] as const;
-const CLASS_REPOSITORY_URL = 'https://github.com/ctg-tme/Thrustmaster_16000M-InputDevice-Class';
-const JOYSTICK_DOCUMENTATION_URL = 'https://support.thrustmaster.com/en/product/t16000mfcs-en/';
 const JOYSTICK_MODEL = 'Thrustmaster T.16000M';
 const CISCO_SAMPLE_CODE_LICENSE_URL = 'https://developer.cisco.com/docs/licenses/';
+const PROJECT_README_URL = `${PROJECT_REPOSITORY_URL}#readme`;
 const THEME_STORAGE_KEY = 'joystick-configurator-theme';
 const DEVICE_IDENTITY_STORAGE_KEY = 'joystick-configurator-device-identity';
 
@@ -424,50 +423,53 @@ export class ConfiguratorApp {
       <header class="hero">
         <div class="hero-copy">
           <span class="eyebrow">RoomOS joystick camera control</span>
-          <h1>Thrustmaster T.16000M production controller</h1>
-          <p>This standalone RoomOS macro turns a T.16000M joystick into a configurable controller for up to four camera sources. Operators can choose whether the joystick controls Main or Preview, frame supported PTZ cameras, and swap the staged source live.</p>
-          <div class="installation-paths no-print" aria-label="Choose how to begin">
-            <article>
-              <div><strong>Fresh Installation</strong><p>Start with the documented defaults, then configure the room and cameras.</p></div>
-              <button class="button primary" id="fresh-installation" type="button">Fresh Installation</button>
-            </article>
-            <article>
-              <div><strong>Start from Macro</strong><p>Load settings from a macro file without executing its source.</p></div>
-              <label class="button secondary file-button">Start from Macro
-                <input id="import-macro-file" type="file" accept=".js,.txt,text/javascript">
-              </label>
-            </article>
-            <article>
-              <div><strong>Fetch Macro from Device</strong><p>${connected ? 'Read the installed macro from the verified device.' : 'Connect to a device, verify it, and read its installed macro.'}</p></div>
-              <button class="button secondary" id="begin-device-macro-fetch" type="button" ${this.sources && !this.busy ? '' : 'disabled'}>Fetch Macro from Device</button>
-            </article>
-          </div>
+          <h1>Joystick Camera Control Production Switcher</h1>
+          <p class="hero-summary">Control Cisco RoomOS cameras with a Thrustmaster T.16000M joystick and run a simple Main/Preview production workflow without a separate control computer.</p>
+          <ul class="solution-highlights" aria-label="Solution highlights">
+            <li><strong>Direct camera control</strong><span>Pan, tilt, and zoom supported Cisco cameras from the joystick.</span></li>
+            <li><strong>Main and Preview</strong><span>Take a source live or stage it locally before swapping it to Main.</span></li>
+            <li><strong>One to four cameras</strong><span>Name each source and assign the T.16000M buttons for the room.</span></li>
+          </ul>
+          <p class="hero-read-more"><a id="project-readme-link" href="${PROJECT_README_URL}" target="_blank" rel="noreferrer">Read the project README <span aria-hidden="true">↗</span></a> for the complete feature set, requirements, operator workflow, and manual setup.</p>
+          <section class="installer-introduction no-print" aria-labelledby="choose-start-title">
+            <span class="eyebrow">Start with the Web Installer</span>
+            <h2 id="choose-start-title">Choose how to begin</h2>
+            <p>Configure every button, install or update both RoomOS macros, and download a room-specific PDF operator guide.</p>
+            <div class="installation-paths no-print" aria-label="Choose how to begin">
+              <article>
+                <div><strong>Fresh Installation</strong><p>Start with the documented defaults, then configure the room and cameras.</p></div>
+                <button class="button primary" id="fresh-installation" type="button">Fresh Installation</button>
+              </article>
+              <article>
+                <div><strong>Start from Macro</strong><p>Load settings from a macro file without executing its source.</p></div>
+                <label class="button secondary file-button">Start from Macro
+                  <input id="import-macro-file" type="file" accept=".js,.txt,text/javascript">
+                </label>
+              </article>
+              <article>
+                <div><strong>Fetch Macro from Device</strong><p>${connected ? 'Read the installed macro from the verified device.' : 'Connect to a device, verify it, and read its installed macro.'}</p></div>
+                <button class="button secondary" id="begin-device-macro-fetch" type="button" ${this.sources && !this.busy ? '' : 'disabled'}>Fetch Macro from Device</button>
+              </article>
+            </div>
+          </section>
           ${this.configurationMessage ? `<div class="callout success introduction-callout"><strong>Configuration loaded</strong><p>${escapeHtml(this.configurationMessage)}</p></div>` : ''}
           ${this.configurationError ? `<div class="callout error introduction-callout"><strong>Configuration not loaded</strong><p>${escapeHtml(this.configurationError)}</p></div>` : ''}
         </div>
         <div class="hero-sidebar">
-          <aside class="before-you-start" aria-labelledby="before-you-start-title">
-            <h2 id="before-you-start-title">Before you start</h2>
+          <figure class="live-demo">
+            <img src="./assets/infocomm-2026-joystick-demo.png" alt="An operator controlling a camera with the Thrustmaster T.16000M at InfoComm 2026">
+            <figcaption>The joystick camera-control experience demonstrated at InfoComm 2026.</figcaption>
+          </figure>
+          <aside class="purpose-checklist" aria-labelledby="purpose-checklist-title">
+            <span class="eyebrow">Purpose-built solution</span>
+            <h2 id="purpose-checklist-title">What to know before you begin</h2>
             <ul>
-              <li><strong>Plan for knowledgeable support.</strong> This solution is considered custom and is not supported by Cisco TAC. For support or edits, work with someone familiar with RoomOS macros and the RoomOS xAPI. Engaging a Cisco partner with this experience is encouraged.</li>
-              <li><strong>Use community-tested hardware.</strong> The Thrustmaster T.16000M is neither Cisco Certified nor Cisco Verified hardware. The broader Cisco community has found it works with RoomOS, except for the slider at its base.<span><strong>Base slider:</strong> It advertises a different HID profile that is incompatible with RoomOS, so it cannot be configured.</span></li>
-              <li><strong>Review the license.</strong> This solution is provided under the <a href="${CISCO_SAMPLE_CODE_LICENSE_URL}" target="_blank" rel="noreferrer">Cisco Sample Code License</a>.</li>
+              <li><strong>T.16000M only</strong><span>The controls and handedness modes are designed for this joystick, not generic USB controllers.</span></li>
+              <li><strong>RoomOS and supported cameras</strong><span>You need a compatible RoomOS device. Cisco certified cameras provide joystick PTZ control; other sources can be switched only.</span></li>
+              <li><strong>Custom sample code</strong><span>The solution is community-tested and is not supported by Cisco TAC.</span></li>
             </ul>
+            <a href="${PROJECT_README_URL}" target="_blank" rel="noreferrer">Review all requirements and limitations <span aria-hidden="true">↗</span></a>
           </aside>
-          <div class="hero-requirements">
-            <span class="eyebrow">Hardware prerequisites</span>
-            <ul>
-              <li><strong>Cisco codec</strong><span>A RoomOS device with support for the InputDevice Joystick APIs.</span></li>
-              <li><strong>Thrustmaster T.16000M</strong><span>The USB joystick used for all fixed axis and configurable button input.</span></li>
-              <li><strong>Cisco certified cameras</strong><span>Supported cameras provide joystick pan, tilt, and zoom control.</span></li>
-            </ul>
-            <div class="hardware-note"><strong>Other video sources</strong><p>USB and uncertified cameras can be visible and switched, but they are not joystick-controllable by this solution. Additional integration or macro development is required.</p></div>
-            <div class="resource-links no-print">
-              <a href="${JOYSTICK_DOCUMENTATION_URL}" target="_blank" rel="noreferrer">Joystick documentation</a>
-              <a href="${PROJECT_REPOSITORY_URL}" target="_blank" rel="noreferrer">Project repository</a>
-              <a href="${CLASS_REPOSITORY_URL}" target="_blank" rel="noreferrer">InputDevice class</a>
-            </div>
-          </div>
         </div>
       </header>`;
   }

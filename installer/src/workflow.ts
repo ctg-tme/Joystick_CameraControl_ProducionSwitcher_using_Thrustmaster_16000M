@@ -1,5 +1,5 @@
 export const WORKFLOW_STEPS = [
-  { id: 'introduction', title: 'Introduction', description: 'Solution overview and hardware' },
+  { id: 'introduction', title: 'Introduction', description: 'Solution purpose and how to begin' },
   { id: 'macro-settings', title: 'Macro Settings', description: 'Room, behavior, and camera sources' },
   { id: 'button-assignments', title: 'Button Assignments', description: 'Joystick controls and action key' },
   { id: 'review-installation', title: 'Review and Installation', description: 'Review, download, or install' },

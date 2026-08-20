@@ -46,9 +46,21 @@ describe('configurator workflow presentation', () => {
     expect(styles).toMatch(/\.wordmark-copy \{[^}]*justify-items: start;[^}]*text-align: left;/s);
   });
 
-  it('offers all three starting paths on Introduction without a duplicate footer CTA', async () => {
-    const source = await readFile(new URL('./app.ts', import.meta.url), 'utf8');
+  it('aligns the Introduction purpose with the README and offers all three starting paths', async () => {
+    const [source, readme] = await Promise.all([
+      readFile(new URL('./app.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../../README.md', import.meta.url), 'utf8'),
+    ]);
 
+    expect(source).toContain('<h1>Joystick Camera Control Production Switcher</h1>');
+    expect(source).toContain('without a separate control computer');
+    expect(source).toContain('not generic USB controllers');
+    expect(source).toContain('id="project-readme-link"');
+    expect(source).toContain('Read the project README');
+    expect(source).toContain('infocomm-2026-joystick-demo.png');
+    expect(readme).toContain('# Joystick Camera Control Production Switcher');
+    expect(readme).toContain('without a separate control computer');
+    expect(readme).toContain('not a generic USB-joystick integration');
     expect(source).toContain('<strong>Fresh Installation</strong>');
     expect(source).toContain('<strong>Start from Macro</strong>');
     expect(source).toContain('<strong>Fetch Macro from Device</strong>');
@@ -57,22 +69,20 @@ describe('configurator workflow presentation', () => {
     expect(source).toContain("if (currentStep === 1) return '';");
   });
 
-  it('places support, hardware, slider, and license warnings before hardware prerequisites', async () => {
+  it('keeps the preflight context concise and links detailed requirements to the README', async () => {
     const [source, styles] = await Promise.all([
       readFile(new URL('./app.ts', import.meta.url), 'utf8'),
       readFile(new URL('./styles.css', import.meta.url), 'utf8'),
     ]);
 
-    expect(source.indexOf('Before you start')).toBeLessThan(source.indexOf('Hardware prerequisites'));
+    expect(source).toContain('What to know before you begin');
+    expect(source).toContain('T.16000M only');
+    expect(source).toContain('Cisco certified cameras provide joystick PTZ control');
     expect(source).toContain('is not supported by Cisco TAC');
-    expect(source).toContain('work with someone familiar with RoomOS macros and the RoomOS xAPI');
-    expect(source).toContain('Engaging a Cisco partner with this experience is encouraged');
-    expect(source).not.toContain('engage a partner familiar with RoomOS macros');
-    expect(source).toContain('neither Cisco Certified nor Cisco Verified hardware');
-    expect(source).toContain('different HID profile that is incompatible with RoomOS');
-    expect(source).toContain('href="${CISCO_SAMPLE_CODE_LICENSE_URL}"');
-    expect(styles).toMatch(/\.before-you-start \{[^}]*border-left: 6px solid var\(--warning-border-default\);/s);
-    expect(styles).toMatch(/\.before-you-start \{[^}]*background: var\(--warning-bg-medium-default\);/s);
+    expect(source).toContain('Review all requirements and limitations');
+    expect(source).not.toContain('different HID profile that is incompatible with RoomOS');
+    expect(styles).toContain('.purpose-checklist');
+    expect(styles).toContain('.live-demo img');
   });
 
   it('opens device connection as a modal without navigating the workflow', async () => {
@@ -265,8 +275,8 @@ describe('configurator workflow presentation', () => {
 
     expect(styles).toContain('--interact-border-weak-default: #656c75;');
     expect(styles).toContain('--overlay-bg-default: #000000bf;');
-    expect(styles).toMatch(/\.resource-links a \{[^}]*color: var\(--inverse-text-default\);/s);
-    expect(styles).not.toMatch(/\.resource-links a \{[^}]*color: var\(--interact-bg-/s);
+    expect(styles).toMatch(/\.hero-read-more a,[\s\S]*?color: var\(--inverse-text-default\);/);
+    expect(styles).not.toMatch(/\.hero-read-more a,[^{]*\{[^}]*color: var\(--interact-bg-/s);
   });
 
   it('shows accessible configuration definitions from information icons', async () => {

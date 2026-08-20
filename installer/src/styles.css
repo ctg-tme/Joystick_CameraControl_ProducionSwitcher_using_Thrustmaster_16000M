@@ -421,8 +421,8 @@ code {
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(390px, .95fr);
-  gap: 56px;
+  grid-template-columns: minmax(0, 1.08fr) minmax(340px, .92fr);
+  gap: 40px;
   padding: 64px var(--page-gutter) 72px;
   background:
     radial-gradient(circle at 84% 8%, rgb(82 166 43 / 20%), transparent 34%),
@@ -449,17 +449,95 @@ code {
   line-height: 1.03;
 }
 
-.hero-copy > p {
+.hero-summary {
   max-width: 700px;
   margin-top: 22px;
   color: var(--inverse-text-medium-default);
   font-size: 17px;
 }
 
+.solution-highlights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.solution-highlights li {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-top: 3px solid var(--brand-accent-border-default);
+  border-radius: 0 0 6px 6px;
+  background: var(--brand-bg-hover);
+}
+
+.solution-highlights strong {
+  color: var(--inverse-text-default);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.solution-highlights span {
+  color: var(--inverse-text-medium-default);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hero-read-more {
+  margin-top: 18px;
+  color: var(--inverse-text-medium-default);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.hero-read-more a,
+.purpose-checklist > a {
+  border-radius: 4px;
+  color: var(--inverse-text-default);
+  font-weight: 700;
+  text-underline-offset: 3px;
+}
+
+.hero-read-more a:hover,
+.purpose-checklist > a:hover {
+  color: var(--inverse-text-hover);
+  text-decoration-thickness: 2px;
+}
+
+.hero-read-more a:active,
+.purpose-checklist > a:active {
+  color: var(--inverse-text-active);
+}
+
+.installer-introduction {
+  margin-top: 34px;
+  padding-top: 28px;
+  border-top: 1px solid var(--brand-accent-border-medium-default);
+}
+
+.installer-introduction h2 {
+  margin-top: 6px;
+  color: var(--inverse-text-default);
+  font-family: "Sharp Sans", Inter, ui-sans-serif, sans-serif;
+  font-size: 24px;
+  line-height: 34px;
+}
+
+.installer-introduction > p {
+  max-width: 680px;
+  margin-top: 4px;
+  color: var(--inverse-text-medium-default);
+  font-size: 14px;
+  line-height: 20px;
+}
+
 .installation-paths {
   display: grid;
   gap: 10px;
-  margin-top: 28px;
+  margin-top: 16px;
 }
 
 .installation-paths article {
@@ -591,125 +669,75 @@ code {
   gap: 16px;
 }
 
-.before-you-start {
-  padding: 16px 18px;
-  border-left: 6px solid var(--warning-border-default);
-  border-radius: 6px;
-  background: var(--warning-bg-medium-default);
-  color: var(--base-text-default);
+.live-demo {
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--brand-accent-border-medium-default);
+  border-radius: 8px;
+  background: var(--brand-bg-hover);
   box-shadow: var(--surface-shadow);
 }
 
-.before-you-start h2 {
-  font-size: 16px;
-  line-height: 22px;
-}
-
-.before-you-start ul {
-  display: grid;
-  gap: 10px;
-  margin: 12px 0 0;
-  padding-left: 20px;
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.before-you-start li > span {
+.live-demo img {
   display: block;
-  margin-top: 5px;
+  width: 100%;
+  aspect-ratio: 1830 / 1025;
+  object-fit: cover;
 }
 
-.before-you-start a {
-  border-radius: 4px;
-  color: var(--interact-text-default);
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.live-demo figcaption {
+  padding: 11px 14px 12px;
+  color: var(--inverse-text-medium-default);
+  font-size: 12px;
+  line-height: 18px;
 }
 
-.before-you-start a:hover {
-  color: var(--interact-text-hover);
-}
-
-.before-you-start a:active {
-  color: var(--interact-text-active);
-}
-
-.hero-requirements {
-  align-self: start;
-  padding: 24px;
+.purpose-checklist {
+  padding: 22px;
   border: 1px solid var(--brand-accent-border-medium-default);
   border-radius: 8px;
-  background: rgb(15 18 20 / 52%);
+  background: var(--brand-bg-hover);
+  box-shadow: var(--surface-shadow);
 }
 
-.hero-requirements ul {
+.purpose-checklist h2 {
+  margin-top: 6px;
+  color: var(--inverse-text-default);
+  font-family: "Sharp Sans", Inter, ui-sans-serif, sans-serif;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.purpose-checklist ul {
   display: grid;
-  gap: 0;
-  margin: 14px 0 0;
+  gap: 12px;
+  margin: 16px 0 18px;
   padding: 0;
   list-style: none;
 }
 
-.hero-requirements li {
+.purpose-checklist li {
   display: grid;
   gap: 3px;
-  padding: 13px 0;
-  border-bottom: 1px solid rgb(247 247 247 / 16%);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--brand-accent-border-medium-default);
 }
 
-.hero-requirements li strong {
+.purpose-checklist li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.purpose-checklist li strong {
   color: var(--inverse-text-default);
   font-size: 14px;
+  line-height: 20px;
 }
 
-.hero-requirements li span,
-.hardware-note p {
+.purpose-checklist li span {
   color: var(--inverse-text-medium-default);
   font-size: 13px;
-}
-
-.hardware-note {
-  margin-top: 16px;
-  padding: 13px 14px;
-  border-left: 4px solid var(--warning-border-default);
-  border-radius: 0 6px 6px 0;
-  background: rgb(250 239 185 / 10%);
-}
-
-.hardware-note strong {
-  color: var(--inverse-text-default);
-}
-
-.hardware-note p {
-  margin-top: 4px;
-}
-
-.resource-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-top: 18px;
-}
-
-.resource-links a {
-  border-radius: 6px;
-  color: var(--inverse-text-default);
-  font-size: 14px;
-  font-weight: 700;
   line-height: 20px;
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
-}
-
-.resource-links a:hover {
-  color: var(--inverse-text-hover);
-  text-decoration-thickness: 2px;
-}
-
-.resource-links a:active {
-  color: var(--inverse-text-active);
 }
 
 .workflow-page > .hero {
@@ -2402,6 +2430,10 @@ td code {
 
   .workflow-page > .hero {
     padding: 32px 20px;
+  }
+
+  .solution-highlights {
+    grid-template-columns: 1fr;
   }
 
   .installation-paths article {
