@@ -297,7 +297,7 @@ describe('direct installation connection flow', () => {
     expect(testableApp.renderInstallConfirmationModal()).toContain('No active calls detected');
   });
 
-  it('opens the connection dialog automatically when entering Review without a verified device', () => {
+  it('waits for an explicit install choice when entering Review without a verified device', () => {
     let currentStep: WorkflowNavigation['currentStep'] = 3;
     const workflow: WorkflowNavigation = {
       get currentStep() {
@@ -339,8 +339,8 @@ describe('direct installation connection flow', () => {
 
     testableApp.navigateToStep(4);
 
-    expect(testableApp.deviceConnectionOpen).toBe(true);
-    expect(testableApp.pendingDeviceAction).toBe('install');
+    expect(testableApp.deviceConnectionOpen).toBe(false);
+    expect(testableApp.pendingDeviceAction).toBeUndefined();
     expect(session.connect).not.toHaveBeenCalled();
   });
 
